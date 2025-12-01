@@ -4,8 +4,8 @@ WORKDIR /app
 
 COPY . /app
 
-# 👇 NUEVO: dar permisos de escritura a Laravel
-RUN chown -R application:application storage bootstrap/cache
+RUN chown -R application:application storage bootstrap/cache \
+    && chmod -R ug+rwX storage bootstrap/cache
 
 RUN composer install \
     --no-dev \
