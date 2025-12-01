@@ -5,27 +5,12 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\Admin\ClassSessionController;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
-use Illuminate\Support\Facades\Artisan;
 
 // ------------------------------
 // HOME
 // ------------------------------
 Route::get('/', function () {
     return ['Laravel' => app()->version()];
-});
-
-// ------------------------------
-// RUTA TEMPORAL PARA CORRER MIGRACIONES EN RENDER
-// (BORRAR DESPUÉS DE USAR)
-// ------------------------------
-Route::get('/run-migrations', function () {
-    try {
-        Artisan::call('migrate', ['--force' => true]);
-
-        return nl2br(Artisan::output()) . '<br><br>✅ Migraciones ejecutadas correctamente.';
-    } catch (\Throwable $e) {
-        return '❌ Error ejecutando migraciones: ' . $e->getMessage();
-    }
 });
 
 // ------------------------------
@@ -73,7 +58,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::delete('/api/admin/bookings/{id}', [BookingController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
     Route::put('/api/admin/bookings/{id}/status', [BookingController::class, 'updateStatus'])
-    ->withoutMiddleware([ValidateCsrfToken::class]);
+        ->withoutMiddleware([ValidateCsrfToken::class]);
 
     // ----- CLASES DISPONIBLES (CRUD) -----
     Route::get('/api/admin/classes', [ClassSessionController::class, 'index']);
