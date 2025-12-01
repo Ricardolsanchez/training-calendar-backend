@@ -9,9 +9,6 @@ RUN composer install \
     --optimize-autoloader
 
 # Cache Laravel config, routes, views
-RUN php artisan config:cache && \
-    php artisan route:cache && \
-    php artisan view:cache || true
 
 # Run migrations automatically
 RUN php artisan migrate --force || true
