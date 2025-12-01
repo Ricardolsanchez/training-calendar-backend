@@ -4,11 +4,11 @@ WORKDIR /app
 
 COPY . /app
 
+# 👇 NUEVO: dar permisos de escritura a Laravel
+RUN chown -R application:application storage bootstrap/cache
+
 RUN composer install \
     --no-dev \
     --optimize-autoloader
 
-# Cache Laravel config, routes, views
-
-# Run migrations automatically
 RUN php artisan migrate --force || true
