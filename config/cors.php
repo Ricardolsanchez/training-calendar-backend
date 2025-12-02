@@ -2,15 +2,19 @@
 
 return [
 
-    // 👉 Para desarrollo: aplica CORS a TODAS las rutas
-    'paths' => ['*'],
+    'paths' => [
+        'api/*',
+        'sanctum/csrf-cookie',
+        'login',
+        'logout',
+    ],
 
     'allowed_methods' => ['*'],
 
     'allowed_origins' => [
+        'https://training-calendar-managment.netlify.app', // tu frontend en Netlify
         'http://localhost:5173',
         'http://127.0.0.1:5173',
-        'https://training-calendar-managment.netlify.app/'
     ],
 
     'allowed_origins_patterns' => [],
@@ -21,6 +25,6 @@ return [
 
     'max_age' => 0,
 
-    // 👉 Necesario para cookies de Sanctum
+    // Importante para que funcione con credenciales (cookies de Sanctum)
     'supports_credentials' => true,
-]; 
+];
