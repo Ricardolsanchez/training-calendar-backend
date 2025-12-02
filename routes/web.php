@@ -32,7 +32,8 @@ Route::get('/run-admin-seeder', function () {
     }
 });
 
-Route::post('/api/admin/login', [AdminAuthController::class, 'login']);
+Route::post('/api/admin/login', [AdminAuthController::class, 'login'])
+    ->withoutMiddleware([ValidateCsrfToken::class]);
 
 // ------------------------------
 // LOGIN: usuario autenticado
