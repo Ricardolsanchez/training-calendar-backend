@@ -12,3 +12,5 @@ RUN composer install \
     --optimize-autoloader
 
 RUN php artisan migrate --force || true
+
+RUN php artisan config:clear
