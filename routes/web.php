@@ -5,6 +5,7 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\Admin\ClassSessionController;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use App\Http\Controllers\Admin\AdminAuthController;
 use Illuminate\Support\Facades\Artisan; // 👈 NUEVO
 
 // ------------------------------
@@ -30,6 +31,8 @@ Route::get('/run-admin-seeder', function () {
         return '❌ Error ejecutando seeder: ' . $e->getMessage();
     }
 });
+
+Route::post('/api/admin/login', [AdminAuthController::class, 'login']);
 
 // ------------------------------
 // LOGIN: usuario autenticado
