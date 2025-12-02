@@ -9,7 +9,7 @@ use App\Models\Booking;
 use App\Models\ClassSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
-
+use Illuminate\Support\Facades\Log;   // 👈 NUEVO
 
 class BookingController extends Controller
 {
@@ -73,10 +73,18 @@ class BookingController extends Controller
         $class->spots_left = $class->spots_left - 1;
         $class->save();
 
-        // 6) Enviar correo de confirmación
-        Mail::to($booking->email)->send(
-            new ClassBookedMail($booking, $class)
-        );
+        // 6) Enviar correo de confirmación (ENVUELTO EN try/catch)
+        try {
+            Mail::to($booking->email)->send(
+                new ClassBookedMail($booking, $class)
+            );
+        } catch (\Throwable $e) {
+            Log::error('Error enviando ClassBookedMail', [
+                'booking_id' => $booking->id,
+                'error'      => $e->getMessage(),
+            ]);
+            // NO lanzamos excepción → no rompemos el endpoint
+        }
 
         return response()->json([
             'ok' => true,
@@ -94,13 +102,12 @@ class BookingController extends Controller
 
         $bookings = Booking::orderBy('created_at', 'desc')->get();
 
-        // 🔹 Adjuntar calendar_url de la clase a cada booking
+        // Adjuntar calendar_url de la clase a cada booking
         $bookings = $bookings->map(function (Booking $b) {
             $class = ClassSession::where('title', $b->name)
                 ->where('date_iso', $b->start_date)
                 ->first();
 
-            // esto hará que calendar_url venga en el JSON
             $b->setAttribute('calendar_url', $class?->calendar_url);
 
             return $b;
@@ -170,7 +177,8 @@ class BookingController extends Controller
             'booking' => $booking,
         ]);
     }
-    // BookingController.php
+
+    // ==================== HELPERS ====================
 
     private function getTrainerEmail(?string $trainerName): ?string
     {
@@ -179,28 +187,27 @@ class BookingController extends Controller
         }
 
         $map = [
-            'Sergio Osorio' => 'seosorio@alonsoalonsolaw.com',
-            'Monica Mendoza' => 'mmendoza@alonsoalonsolaw.com',
-            'Kelvin Hodgson' => 'kelvinh@alonsoalonsolaw.com',
-            'Edma Murillo' => 'emurillo@alonsoalonsolaw.com',
-            'Dora Ramirez' => 'dramirez@alonsoalonsolaw.com',
-            'Ada Perez' => 'adaperez@alonsoalonsolaw.com',
-            'Josias Mendez' => 'josias@alonsoalonsolaw.com',
-            'Ricardo Sanchez' => 'risanchez@alonsoalonsolaw.com',
+            'Sergio Osorio'    => 'seosorio@alonsoalonsolaw.com',
+            'Monica Mendoza'   => 'mmendoza@alonsoalonsolaw.com',
+            'Kelvin Hodgson'   => 'kelvinh@alonsoalonsolaw.com',
+            'Edma Murillo'     => 'emurillo@alonsoalonsolaw.com',
+            'Dora Ramirez'     => 'dramirez@alonsoalonsolaw.com',
+            'Ada Perez'        => 'adaperez@alonsoalonsolaw.com',
+            'Josias Mendez'    => 'josias@alonsoalonsolaw.com',
+            'Ricardo Sanchez'  => 'risanchez@alonsoalonsolaw.com',
             'Giselle Cárdenas' => 'giscardenas@alonsoalonsolaw.com',
         ];
 
         return $map[$trainerName] ?? null;
     }
 
-
     public function updateStatus(Request $request, string $id)
     {
         $booking = Booking::findOrFail($id);
 
         $validated = $request->validate([
-            'status' => 'required|in:accepted,denied',
-            'calendar_url' => 'nullable|string|max:2048', // viene del popup
+            'status'       => 'required|in:accepted,denied',
+            'calendar_url' => 'nullable|string|max:2048',
         ]);
 
         // 1) Guardar estado de la reserva
@@ -217,24 +224,33 @@ class BookingController extends Controller
                 ->first();
 
             if ($class) {
-                // 2.1 Guardar el link en la clase (NO en bookings)
+                // 2.1 Guardar el link en la clase
                 if (!empty($calendarUrl)) {
                     $class->calendar_url = $calendarUrl;
                     $class->save();
                 }
 
-                // 2.2 Correo a la persona que reservó
-                Mail::to($booking->email)->send(
-                    new ClassAcceptedMail($booking, $class)
-                );
-
-                // 2.3 Correo al trainer asignado
-                $trainerEmail = $this->getTrainerEmail($class->trainer_name);
-
-                if ($trainerEmail) {
-                    Mail::to($trainerEmail)->send(
-                        new TrainerClassAcceptedMail($booking, $class)
+                // 2.2 Enviar correos protegidos con try/catch
+                try {
+                    // IMPORTANTE: pasar también $calendarUrl al mailable
+                    Mail::to($booking->email)->send(
+                        new ClassAcceptedMail($booking, $class, $calendarUrl)
                     );
+
+                    $trainerEmail = $this->getTrainerEmail($class->trainer_name);
+
+                    if ($trainerEmail) {
+                        Mail::to($trainerEmail)->send(
+                            new TrainerClassAcceptedMail($booking, $class)
+                        );
+                    }
+                } catch (\Throwable $e) {
+                    Log::error('Error enviando correos de aceptación de clase', [
+                        'booking_id' => $booking->id,
+                        'class_id'   => $class->id ?? null,
+                        'error'      => $e->getMessage(),
+                    ]);
+                    // NO lanzamos excepción → el endpoint sigue respondiendo 200
                 }
             }
         }
@@ -247,7 +263,6 @@ class BookingController extends Controller
         }
 
         if ($class) {
-            // atributo "virtual" para que el frontend lo vea
             $booking->setAttribute('calendar_url', $class->calendar_url);
         }
 
