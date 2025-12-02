@@ -9,25 +9,26 @@ use App\Models\Booking;
 use App\Models\ClassSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Log;   // 👈 NUEVO
+use Illuminate\Support\Facades\Log;
 
 class BookingController extends Controller
 {
-    // Crear una reserva desde el formulario del calendario
+    // ==================== CREAR RESERVA (PÚBLICO) ====================
+
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email',
-            'notes' => 'nullable|string',
-            'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
+            'name'                  => 'required|string|max:255',
+            'email'                 => 'required|email',
+            'notes'                 => 'nullable|string',
+            'start_date'            => 'required|date',
+            'end_date'              => 'required|date|after_or_equal:start_date',
 
-            'trainer_name' => 'nullable|string|max:255',
-            'original_start_date' => 'nullable|date',
-            'original_end_date' => 'nullable|date',
-            'original_training_days' => 'nullable|integer|min:0',
-            'new_training_days' => 'nullable|integer|min:0',
+            'trainer_name'          => 'nullable|string|max:255',
+            'original_start_date'   => 'nullable|date',
+            'original_end_date'     => 'nullable|date',
+            'original_training_days'=> 'nullable|integer|min:0',
+            'new_training_days'     => 'nullable|integer|min:0',
         ]);
 
         // nuevo campo
@@ -40,7 +41,7 @@ class BookingController extends Controller
 
         if (!$class) {
             return response()->json([
-                'ok' => false,
+                'ok'      => false,
                 'message' => 'Class is not available anymore.',
             ], 422);
         }
@@ -53,7 +54,7 @@ class BookingController extends Controller
 
         if ($alreadyBooked) {
             return response()->json([
-                'ok' => false,
+                'ok'      => false,
                 'message' => 'You already have a reservation for this class.',
             ], 422);
         }
@@ -61,7 +62,7 @@ class BookingController extends Controller
         // 3) Validar cupos
         if ($class->spots_left <= 0) {
             return response()->json([
-                'ok' => false,
+                'ok'      => false,
                 'message' => 'We’re sorry! We’ve run out of available seats for this class.',
             ], 422);
         }
@@ -87,13 +88,14 @@ class BookingController extends Controller
         }
 
         return response()->json([
-            'ok' => true,
+            'ok'      => true,
             'message' => 'Reserva creada correctamente',
             'booking' => $booking,
         ], 201);
     }
 
-    // ADMIN: Listar reservas
+    // ==================== ADMIN: LISTAR RESERVAS ====================
+
     public function index(Request $request)
     {
         if (!$request->user()->is_admin) {
@@ -114,11 +116,13 @@ class BookingController extends Controller
         });
 
         return response()->json([
-            'ok' => true,
-            'message' => 'Listado de reservas',
+            'ok'       => true,
+            'message'  => 'Listado de reservas',
             'bookings' => $bookings,
         ]);
     }
+
+    // ==================== ADMIN: ELIMINAR RESERVA ====================
 
     public function destroy(string $id)
     {
@@ -126,7 +130,7 @@ class BookingController extends Controller
 
         if (!$booking) {
             return response()->json([
-                'ok' => false,
+                'ok'      => false,
                 'message' => 'Reserva no encontrada',
             ], 404);
         }
@@ -144,10 +148,12 @@ class BookingController extends Controller
         $booking->delete();
 
         return response()->json([
-            'ok' => true,
+            'ok'      => true,
             'message' => 'Reserva eliminada correctamente',
         ]);
     }
+
+    // ==================== ADMIN: ACTUALIZAR RESERVA ====================
 
     public function update(Request $request, string $id)
     {
@@ -155,24 +161,24 @@ class BookingController extends Controller
 
         if (!$booking) {
             return response()->json([
-                'ok' => false,
+                'ok'      => false,
                 'message' => 'Reserva no encontrada',
             ], 404);
         }
 
         $validated = $request->validate([
-            'name' => 'sometimes|required|string|max:255',
-            'email' => 'sometimes|required|email',
-            'notes' => 'nullable|string',
-            'start_date' => 'sometimes|required|date',
-            'end_date' => 'sometimes|required|date|after_or_equal:start_date',
-            'trainer_name' => 'nullable|string|max:255',
+            'name'        => 'sometimes|required|string|max:255',
+            'email'       => 'sometimes|required|email',
+            'notes'       => 'nullable|string',
+            'start_date'  => 'sometimes|required|date',
+            'end_date'    => 'sometimes|required|date|after_or_equal:start_date',
+            'trainer_name'=> 'nullable|string|max:255',
         ]);
 
         $booking->update($validated);
 
         return response()->json([
-            'ok' => true,
+            'ok'      => true,
             'message' => 'Reserva actualizada correctamente',
             'booking' => $booking,
         ]);
@@ -201,6 +207,8 @@ class BookingController extends Controller
         return $map[$trainerName] ?? null;
     }
 
+    // ==================== ADMIN: CAMBIAR ESTADO (ACCEPT / DENY) ====================
+
     public function updateStatus(Request $request, string $id)
     {
         $booking = Booking::findOrFail($id);
@@ -210,64 +218,61 @@ class BookingController extends Controller
             'calendar_url' => 'nullable|string|max:2048',
         ]);
 
-        // 1) Guardar estado de la reserva
+        // 1) Actualizar estado
         $booking->status = $validated['status'];
         $booking->save();
 
         $calendarUrl = $validated['calendar_url'] ?? null;
-        $class = null;
 
-        // 2) Si se acepta, buscamos la clase, guardamos el link y mandamos correos
-        if ($booking->status === 'accepted') {
-            $class = ClassSession::where('title', $booking->name)
-                ->where('date_iso', $booking->start_date)
-                ->first();
+        // Buscar clase asociada
+        $class = ClassSession::where('title', $booking->name)
+            ->where('date_iso', $booking->start_date)
+            ->first();
 
-            if ($class) {
-                // 2.1 Guardar el link en la clase
-                if (!empty($calendarUrl)) {
-                    $class->calendar_url = $calendarUrl;
-                    $class->save();
-                }
+        if ($class && !empty($calendarUrl)) {
+            // Guardar / actualizar link en la clase
+            $class->calendar_url = $calendarUrl;
+            $class->save();
+        }
 
-                // 2.2 Enviar correos protegidos con try/catch
-                try {
-                    // IMPORTANTE: pasar también $calendarUrl al mailable
-                    Mail::to($booking->email)->send(
-                        new ClassAcceptedMail($booking, $class, $calendarUrl)
+        // 2) Enviar correos SOLO si se aceptó
+        if ($booking->status === 'accepted' && $class) {
+            try {
+                // Correo al cliente
+                Mail::to($booking->email)->send(
+                    new ClassAcceptedMail($booking, $class, $calendarUrl)
+                );
+            } catch (\Throwable $e) {
+                Log::error('Error enviando ClassAcceptedMail', [
+                    'booking_id' => $booking->id,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                // Correo al trainer
+                $trainerEmail = $this->getTrainerEmail($class->trainer_name);
+
+                if ($trainerEmail) {
+                    Mail::to($trainerEmail)->send(
+                        new TrainerClassAcceptedMail($booking, $class)
                     );
-
-                    $trainerEmail = $this->getTrainerEmail($class->trainer_name);
-
-                    if ($trainerEmail) {
-                        Mail::to($trainerEmail)->send(
-                            new TrainerClassAcceptedMail($booking, $class)
-                        );
-                    }
-                } catch (\Throwable $e) {
-                    Log::error('Error enviando correos de aceptación de clase', [
-                        'booking_id' => $booking->id,
-                        'class_id'   => $class->id ?? null,
-                        'error'      => $e->getMessage(),
-                    ]);
-                    // NO lanzamos excepción → el endpoint sigue respondiendo 200
                 }
+            } catch (\Throwable $e) {
+                Log::error('Error enviando TrainerClassAcceptedMail', [
+                    'booking_id' => $booking->id,
+                    'error'      => $e->getMessage(),
+                ]);
             }
         }
 
-        // 3) Aseguramos que en la respuesta venga calendar_url
-        if (!$class) {
-            $class = ClassSession::where('title', $booking->name)
-                ->where('date_iso', $booking->start_date)
-                ->first();
-        }
-
+        // 3) Asegurar que calendar_url venga en la respuesta
         if ($class) {
             $booking->setAttribute('calendar_url', $class->calendar_url);
         }
 
         return response()->json([
-            'ok' => true,
+            'ok'      => true,
             'message' => 'Estado de la reserva actualizado',
             'booking' => $booking,
         ]);
