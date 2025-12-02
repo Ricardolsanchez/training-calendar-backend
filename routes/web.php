@@ -5,12 +5,30 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\Admin\ClassSessionController;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Support\Facades\Artisan; // 👈 NUEVO
 
 // ------------------------------
 // HOME
 // ------------------------------
 Route::get('/', function () {
     return ['Laravel' => app()->version()];
+});
+
+// ----------------------------------------------------
+// 🔹 RUTA TEMPORAL PARA CREAR / ACTUALIZAR EL ADMIN 🔹
+// (BORRAR DESPUÉS DE USAR EN PRODUCCIÓN)
+// ----------------------------------------------------
+Route::get('/run-admin-seeder', function () {
+    try {
+        Artisan::call('db:seed', [
+            '--class' => 'Database\\Seeders\\AdminUserSeeder',
+            '--force' => true,
+        ]);
+
+        return nl2br(Artisan::output()) . '<br><br>✅ Admin seedeado correctamente.';
+    } catch (\Throwable $e) {
+        return '❌ Error ejecutando seeder: ' . $e->getMessage();
+    }
 });
 
 // ------------------------------
