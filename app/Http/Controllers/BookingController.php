@@ -8,9 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\View;
-
-// 👇 NUEVO: nuestro servicio que llama a la API HTTP de Brevo
-use App\Services\BrevoMailer;
+use App\Services\BrevoMailer; // 👈 Servicio HTTP de Brevo
 
 class BookingController extends Controller
 {
@@ -19,6 +17,8 @@ class BookingController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'class_id' => 'required|integer',      // 👈 ID de la clase que viene del front
+
             'name' => 'required|string|max:255',
             'email' => 'required|email',
             'notes' => 'nullable|string',
@@ -35,10 +35,8 @@ class BookingController extends Controller
         // nuevo campo
         $validated['status'] = 'pending';
 
-        // 1) Buscar la clase asociada (por título + fecha)
-        $class = ClassSession::where('title', $validated['name'])
-            ->where('date_iso', $validated['start_date'])
-            ->first();
+        // 1) Buscar la clase asociada por ID (más seguro)
+        $class = ClassSession::find($validated['class_id']);
 
         if (!$class) {
             return response()->json([
@@ -46,6 +44,9 @@ class BookingController extends Controller
                 'message' => 'Class is not available anymore.',
             ], 422);
         }
+
+        // Ya no necesitamos class_id dentro del array para crear la reserva
+        unset($validated['class_id']);
 
         // 2) Verificar que este correo NO tenga ya una reserva para esta clase
         $alreadyBooked = Booking::where('email', $validated['email'])
@@ -98,7 +99,7 @@ class BookingController extends Controller
         }
 
         return response()->json([
-            'ok' => true,
+            'ok'      => true,
             'message' => 'Reserva creada correctamente',
             'booking' => $booking,
         ], 201);
@@ -126,8 +127,8 @@ class BookingController extends Controller
         });
 
         return response()->json([
-            'ok' => true,
-            'message' => 'Listado de reservas',
+            'ok'       => true,
+            'message'  => 'Listado de reservas',
             'bookings' => $bookings,
         ]);
     }
@@ -140,7 +141,7 @@ class BookingController extends Controller
 
         if (!$booking) {
             return response()->json([
-                'ok' => false,
+                'ok'      => false,
                 'message' => 'Reserva no encontrada',
             ], 404);
         }
@@ -158,7 +159,7 @@ class BookingController extends Controller
         $booking->delete();
 
         return response()->json([
-            'ok' => true,
+            'ok'      => true,
             'message' => 'Reserva eliminada correctamente',
         ]);
     }
@@ -171,24 +172,24 @@ class BookingController extends Controller
 
         if (!$booking) {
             return response()->json([
-                'ok' => false,
+                'ok'      => false,
                 'message' => 'Reserva no encontrada',
             ], 404);
         }
 
         $validated = $request->validate([
-            'name' => 'sometimes|required|string|max:255',
-            'email' => 'sometimes|required|email',
-            'notes' => 'nullable|string',
+            'name'       => 'sometimes|required|string|max:255',
+            'email'      => 'sometimes|required|email',
+            'notes'      => 'nullable|string',
             'start_date' => 'sometimes|required|date',
-            'end_date' => 'sometimes|required|date|after_or_equal:start_date',
+            'end_date'   => 'sometimes|required|date|after_or_equal:start_date',
             'trainer_name' => 'nullable|string|max:255',
         ]);
 
         $booking->update($validated);
 
         return response()->json([
-            'ok' => true,
+            'ok'      => true,
             'message' => 'Reserva actualizada correctamente',
             'booking' => $booking,
         ]);
@@ -203,15 +204,15 @@ class BookingController extends Controller
         }
 
         $map = [
-            'Sergio Osorio'      => 'seosorio@alonsoalonsolaw.com',
-            'Monica Mendoza'     => 'mmendoza@alonsoalonsolaw.com',
-            'Kelvin Hodgson'     => 'kelvinh@alonsoalonsolaw.com',
-            'Edma Murillo'       => 'emurillo@alonsoalonsolaw.com',
-            'Dora Ramirez'       => 'dramirez@alonsoalonsolaw.com',
-            'Ada Perez'          => 'adaperez@alonsoalonsolaw.com',
-            'Josias Mendez'      => 'josias@alonsoalonsolaw.com',
-            'Ricardo Sanchez'    => 'risanchez@alonsoalonsolaw.com',
-            'Giselle Cárdenas'   => 'giscardenas@alonsoalonsolaw.com',
+            'Sergio Osorio'   => 'seosorio@alonsoalonsolaw.com',
+            'Monica Mendoza'  => 'mmendoza@alonsoalonsolaw.com',
+            'Kelvin Hodgson'  => 'kelvinh@alonsoalonsolaw.com',
+            'Edma Murillo'    => 'emurillo@alonsoalonsolaw.com',
+            'Dora Ramirez'    => 'dramirez@alonsoalonsolaw.com',
+            'Ada Perez'       => 'adaperez@alonsoalonsolaw.com',
+            'Josias Mendez'   => 'josias@alonsoalonsolaw.com',
+            'Ricardo Sanchez' => 'risanchez@alonsoalonsolaw.com',
+            'Giselle Cárdenas'=> 'giscardenas@alonsoalonsolaw.com',
         ];
 
         return $map[$trainerName] ?? null;
@@ -225,7 +226,7 @@ class BookingController extends Controller
             $booking = Booking::findOrFail($id);
 
             $validated = $request->validate([
-                'status' => 'required|in:accepted,denied',
+                'status'       => 'required|in:accepted,denied',
                 'calendar_url' => 'nullable|string|max:2048',
             ]);
 
@@ -309,7 +310,7 @@ class BookingController extends Controller
             }
 
             return response()->json([
-                'ok' => true,
+                'ok'      => true,
                 'message' => 'Estado de la reserva actualizado',
                 'booking' => $booking,
             ]);
@@ -317,11 +318,11 @@ class BookingController extends Controller
         } catch (\Throwable $e) {
             Log::error('Error en updateStatus', [
                 'booking_id' => $id,
-                'error' => $e->getMessage(),
+                'error'      => $e->getMessage(),
             ]);
 
             return response()->json([
-                'ok' => false,
+                'ok'      => false,
                 'message' => 'Server error updating booking status.',
             ], 500);
         }
