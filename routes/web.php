@@ -6,13 +6,27 @@ use App\Http\Controllers\BookingController;
 use App\Http\Controllers\Admin\ClassSessionController;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use App\Http\Controllers\Admin\AdminAuthController;
-use Illuminate\Support\Facades\Artisan; // 👈 NUEVO
+use Illuminate\Support\Facades\Artisan; // ✅ ya lo tienes
+use Illuminate\Support\Facades\Mail;    // ✅ NUEVO
 
 // ------------------------------
 // HOME
 // ------------------------------
 Route::get('/', function () {
     return ['Laravel' => app()->version()];
+});
+
+// ----------------------------------------------------
+// 🔹 RUTA TEMPORAL PARA PRUEBA DE CORREO CON BREVO 🔹
+// (BORRAR O PROTEGER DESPUÉS)
+// ----------------------------------------------------
+Route::get('/test-mail', function () {
+    Mail::raw('¡Hola Paola! Esto es una prueba desde Brevo API 📨', function ($m) {
+        $m->to('TU_CORREO@GMAIL.COM')   // 👈 pon aquí el correo donde quieres recibir
+          ->subject('Prueba Brevo desde Render ✔️');
+    });
+
+    return 'Correo de prueba enviado.';
 });
 
 // ----------------------------------------------------
@@ -51,14 +65,12 @@ Route::middleware(['auth:sanctum'])->get('/api/user', function (Request $request
 
 // ------------------------------
 // FORMULARIO PÚBLICO DE RESERVAS
-// (desde React, sin CSRF clásico)
 // ------------------------------
 Route::post('/api/bookings', [BookingController::class, 'store'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
 
 // ------------------------------
 // CLASES DISPONIBLES - PÚBLICO
-// (para el BookingCalendar)
 // ------------------------------
 Route::get('/api/classes', [ClassSessionController::class, 'indexPublic']);
 Route::post('/classes', [ClassSessionController::class, 'store'])
