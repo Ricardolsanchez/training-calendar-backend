@@ -6,8 +6,8 @@ use App\Http\Controllers\BookingController;
 use App\Http\Controllers\Admin\ClassSessionController;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use App\Http\Controllers\Admin\AdminAuthController;
-use Illuminate\Support\Facades\Artisan; // ✅ ya lo tienes
-use Illuminate\Support\Facades\Mail;    // ✅ NUEVO
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Mail;
 
 // ------------------------------
 // HOME
@@ -22,16 +22,28 @@ Route::get('/', function () {
 // ----------------------------------------------------
 Route::get('/test-mail', function () {
     Mail::raw('¡Hola Paola! Esto es una prueba desde Brevo API 📨', function ($m) {
-        $m->to('TU_CORREO@GMAIL.COM')
-            ->subject('Prueba Brevo vía API ✔️');
+        $m->to('risanchez@alonsoalonsolaw.com')   // 👈 pon aquí tu correo real
+          ->subject('Prueba Brevo vía API ✔️');
     });
 
     return 'Correo de prueba enviado (si no ves error).';
 });
 
 // ----------------------------------------------------
+// 🔹 DEBUG: VER SI BREVO_API_KEY ESTÁ CARGADA 🔹
+// (ÚSALA SOLO PARA PROBAR, LUEGO BORRA ESTA RUTA)
+// ----------------------------------------------------
+Route::get('/debug-brevo-key', function () {
+    $key = env('BREVO_API_KEY');
+
+    return [
+        'set'    => $key ? true : false,
+        'length' => $key ? strlen($key) : 0,
+    ];
+});
+
+// ----------------------------------------------------
 // 🔹 RUTA TEMPORAL PARA CREAR / ACTUALIZAR EL ADMIN 🔹
-// (BORRAR DESPUÉS DE USAR EN PRODUCCIÓN)
 // ----------------------------------------------------
 Route::get('/run-admin-seeder', function () {
     try {
