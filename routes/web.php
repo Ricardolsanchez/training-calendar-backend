@@ -16,9 +16,9 @@ Route::get('/', function () {
 
 // TEST MAIL (puedes borrarla luego)
 Route::get('/test-mail', function () {
-    Mail::raw('¡Hola Paola! Esto es una prueba desde Brevo SMTP 📨', function ($m) {
+    Mail::raw('¡Hola Paola! Esto es una prueba usando SMTP Brevo 📨', function ($m) {
         $m->to('risanchez@alonsoalonsolaw.com')
-          ->subject('Prueba Brevo vía SMTP ✔️');
+            ->subject('Prueba SMTP Brevo desde Render ✔️');
     });
 
     return 'Correo de prueba enviado (si no ves error).';
