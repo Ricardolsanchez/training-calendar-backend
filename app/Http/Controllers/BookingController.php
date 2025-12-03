@@ -2,15 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Mail\ClassBookedMail;
-use App\Mail\ClassAcceptedMail;
-use App\Mail\TrainerClassAcceptedMail;
 use App\Models\Booking;
 use App\Models\ClassSession;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\View;
+
+// 👇 NUEVO: nuestro servicio que llama a la API HTTP de Brevo
+use App\Services\BrevoMailer;
 
 class BookingController extends Controller
 {
@@ -75,17 +75,26 @@ class BookingController extends Controller
         $class->spots_left = $class->spots_left - 1;
         $class->save();
 
-        // 6) Enviar correo de confirmación (ENVUELTO EN try/catch)
+        // 6) Enviar correo de confirmación usando BrevoMailer (HTTP API)
         try {
-            Mail::to($booking->email)->send(
-                new ClassBookedMail($booking, $class)
+            $html = View::make('emails.class_booked', [
+                'booking'      => $booking,
+                'classSession' => $class,
+            ])->render();
+
+            BrevoMailer::send(
+                $booking->email,
+                $booking->name,
+                'Your class reservation has been received! ✅',
+                $html,
+                'Your class reservation has been received!'
             );
         } catch (\Throwable $e) {
-            Log::error('Error enviando ClassBookedMail', [
+            Log::error('Error enviando ClassBookedMail via Brevo', [
                 'booking_id' => $booking->id,
-                'error' => $e->getMessage(),
+                'error'      => $e->getMessage(),
             ]);
-            // NO lanzamos excepción → no rompemos el endpoint
+            // no rompemos el endpoint
         }
 
         return response()->json([
@@ -194,15 +203,15 @@ class BookingController extends Controller
         }
 
         $map = [
-            'Sergio Osorio' => 'seosorio@alonsoalonsolaw.com',
-            'Monica Mendoza' => 'mmendoza@alonsoalonsolaw.com',
-            'Kelvin Hodgson' => 'kelvinh@alonsoalonsolaw.com',
-            'Edma Murillo' => 'emurillo@alonsoalonsolaw.com',
-            'Dora Ramirez' => 'dramirez@alonsoalonsolaw.com',
-            'Ada Perez' => 'adaperez@alonsoalonsolaw.com',
-            'Josias Mendez' => 'josias@alonsoalonsolaw.com',
-            'Ricardo Sanchez' => 'risanchez@alonsoalonsolaw.com',
-            'Giselle Cárdenas' => 'giscardenas@alonsoalonsolaw.com',
+            'Sergio Osorio'      => 'seosorio@alonsoalonsolaw.com',
+            'Monica Mendoza'     => 'mmendoza@alonsoalonsolaw.com',
+            'Kelvin Hodgson'     => 'kelvinh@alonsoalonsolaw.com',
+            'Edma Murillo'       => 'emurillo@alonsoalonsolaw.com',
+            'Dora Ramirez'       => 'dramirez@alonsoalonsolaw.com',
+            'Ada Perez'          => 'adaperez@alonsoalonsolaw.com',
+            'Josias Mendez'      => 'josias@alonsoalonsolaw.com',
+            'Ricardo Sanchez'    => 'risanchez@alonsoalonsolaw.com',
+            'Giselle Cárdenas'   => 'giscardenas@alonsoalonsolaw.com',
         ];
 
         return $map[$trainerName] ?? null;
@@ -236,7 +245,6 @@ class BookingController extends Controller
                 $class->calendar_url = $calendarUrl;
                 $class->save();
             } elseif ($class && $calendarUrl && !Schema::hasColumn('class_sessions', 'calendar_url')) {
-                // Log para que veas claramente el problema en Render
                 Log::warning('class_sessions no tiene columna calendar_url en producción', [
                     'class_id' => $class->id,
                 ]);
@@ -244,29 +252,51 @@ class BookingController extends Controller
 
             // 4) Enviar correos si se aceptó
             if ($booking->status === 'accepted' && $class) {
+
+                // 4.1 Correo al participante
                 try {
-                    Mail::to($booking->email)->send(
-                        new ClassAcceptedMail($booking, $class, $calendarUrl)
+                    $htmlUser = View::make('emails.class_accepted', [
+                        'booking'     => $booking,
+                        'class'       => $class,
+                        'calendarUrl' => $calendarUrl ?: $class->calendar_url,
+                    ])->render();
+
+                    BrevoMailer::send(
+                        $booking->email,
+                        $booking->name,
+                        '✅ Your class has been confirmed',
+                        $htmlUser,
+                        'Your class has been confirmed.'
                     );
                 } catch (\Throwable $e) {
-                    Log::error('Error enviando ClassAcceptedMail', [
+                    Log::error('Error enviando ClassAcceptedMail via Brevo', [
                         'booking_id' => $booking->id,
-                        'error' => $e->getMessage(),
+                        'error'      => $e->getMessage(),
                     ]);
                 }
 
+                // 4.2 Correo al trainer
                 try {
                     $trainerEmail = $this->getTrainerEmail($class->trainer_name);
 
                     if ($trainerEmail) {
-                        Mail::to($trainerEmail)->send(
-                            new TrainerClassAcceptedMail($booking, $class)
+                        $htmlTrainer = View::make('emails.trainer_class_accepted', [
+                            'booking' => $booking,
+                            'class'   => $class,
+                        ])->render();
+
+                        BrevoMailer::send(
+                            $trainerEmail,
+                            $class->trainer_name ?? 'Trainer',
+                            'New training session assigned',
+                            $htmlTrainer,
+                            'New training session assigned.'
                         );
                     }
                 } catch (\Throwable $e) {
-                    Log::error('Error enviando TrainerClassAcceptedMail', [
+                    Log::error('Error enviando TrainerClassAcceptedMail via Brevo', [
                         'booking_id' => $booking->id,
-                        'error' => $e->getMessage(),
+                        'error'      => $e->getMessage(),
                     ]);
                 }
             }
@@ -275,7 +305,6 @@ class BookingController extends Controller
             if ($class && Schema::hasColumn('class_sessions', 'calendar_url')) {
                 $booking->setAttribute('calendar_url', $class->calendar_url);
             } else {
-                // al menos mandamos el que vino en la petición
                 $booking->setAttribute('calendar_url', $calendarUrl);
             }
 
@@ -297,6 +326,4 @@ class BookingController extends Controller
             ], 500);
         }
     }
-
-
 }
