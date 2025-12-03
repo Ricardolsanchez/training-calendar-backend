@@ -10,6 +10,7 @@ use App\Models\ClassSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class BookingController extends Controller
 {
@@ -211,69 +212,91 @@ class BookingController extends Controller
 
     public function updateStatus(Request $request, string $id)
     {
-        $booking = Booking::findOrFail($id);
+        try {
+            $booking = Booking::findOrFail($id);
 
-        $validated = $request->validate([
-            'status' => 'required|in:accepted,denied',
-            'calendar_url' => 'nullable|string|max:2048',
-        ]);
+            $validated = $request->validate([
+                'status' => 'required|in:accepted,denied',
+                'calendar_url' => 'nullable|string|max:2048',
+            ]);
 
-        // 1) Actualizar estado
-        $booking->status = $validated['status'];
-        $booking->save();
+            // 1) Actualizar estado de la reserva
+            $booking->status = $validated['status'];
+            $booking->save();
 
-        // 2) Traer clase asociada
-        $class = ClassSession::where('title', $booking->name)
-            ->where('date_iso', $booking->start_date)
-            ->first();
+            // 2) Clase asociada
+            $class = ClassSession::where('title', $booking->name)
+                ->where('date_iso', $booking->start_date)
+                ->first();
 
-        $calendarUrl = $validated['calendar_url'] ?? null;
+            $calendarUrl = $validated['calendar_url'] ?? null;
 
-        if ($class && $calendarUrl) {
-            $class->calendar_url = $calendarUrl;
-            $class->save();
-        }
-
-        // 3) Enviar correos si se aceptó
-        if ($booking->status === 'accepted' && $class) {
-
-            try {
-                Mail::to($booking->email)->send(
-                    new ClassAcceptedMail($booking, $class, $calendarUrl)
-                );
-            } catch (\Throwable $e) {
-                Log::error('Error enviando ClassAcceptedMail', [
-                    'booking_id' => $booking->id,
-                    'error' => $e->getMessage(),
+            // 3) Guardar calendar_url SOLO si la columna existe en la tabla
+            if ($class && $calendarUrl && Schema::hasColumn('class_sessions', 'calendar_url')) {
+                $class->calendar_url = $calendarUrl;
+                $class->save();
+            } elseif ($class && $calendarUrl && !Schema::hasColumn('class_sessions', 'calendar_url')) {
+                // Log para que veas claramente el problema en Render
+                Log::warning('class_sessions no tiene columna calendar_url en producción', [
+                    'class_id' => $class->id,
                 ]);
             }
 
-            try {
-                $trainerEmail = $this->getTrainerEmail($class->trainer_name);
-
-                if ($trainerEmail) {
-                    Mail::to($trainerEmail)->send(
-                        new TrainerClassAcceptedMail($booking, $class)
+            // 4) Enviar correos si se aceptó
+            if ($booking->status === 'accepted' && $class) {
+                try {
+                    Mail::to($booking->email)->send(
+                        new ClassAcceptedMail($booking, $class, $calendarUrl)
                     );
+                } catch (\Throwable $e) {
+                    Log::error('Error enviando ClassAcceptedMail', [
+                        'booking_id' => $booking->id,
+                        'error' => $e->getMessage(),
+                    ]);
                 }
-            } catch (\Throwable $e) {
-                Log::error('Error enviando TrainerClassAcceptedMail', [
-                    'booking_id' => $booking->id,
-                    'error' => $e->getMessage(),
-                ]);
+
+                try {
+                    $trainerEmail = $this->getTrainerEmail($class->trainer_name);
+
+                    if ($trainerEmail) {
+                        Mail::to($trainerEmail)->send(
+                            new TrainerClassAcceptedMail($booking, $class)
+                        );
+                    }
+                } catch (\Throwable $e) {
+                    Log::error('Error enviando TrainerClassAcceptedMail', [
+                        'booking_id' => $booking->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
-        }
 
-        // 4) Incluir calendar_url en la respuesta
-        if ($class) {
-            $booking->setAttribute('calendar_url', $class->calendar_url);
-        }
+            // 5) Incluir calendar_url en la respuesta para que el front actualice la tabla
+            if ($class && Schema::hasColumn('class_sessions', 'calendar_url')) {
+                $booking->setAttribute('calendar_url', $class->calendar_url);
+            } else {
+                // al menos mandamos el que vino en la petición
+                $booking->setAttribute('calendar_url', $calendarUrl);
+            }
 
-        return response()->json([
-            'ok' => true,
-            'message' => 'Estado de la reserva actualizado',
-            'booking' => $booking,
-        ]);
+            return response()->json([
+                'ok' => true,
+                'message' => 'Estado de la reserva actualizado',
+                'booking' => $booking,
+            ]);
+
+        } catch (\Throwable $e) {
+            Log::error('Error en updateStatus', [
+                'booking_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'ok' => false,
+                'message' => 'Server error updating booking status.',
+            ], 500);
+        }
     }
+
 
 }

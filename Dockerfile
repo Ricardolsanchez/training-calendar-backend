@@ -11,6 +11,7 @@ RUN composer install \
     --no-dev \
     --optimize-autoloader
 
-RUN php artisan migrate --force || true
+# ❌ QUITAMOS ESTO, NO SIRVE EN RENDER DURANTE EL BUILD
+# RUN php artisan migrate --force || true
 
 RUN php artisan config:clear
