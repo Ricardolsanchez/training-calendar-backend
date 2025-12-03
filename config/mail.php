@@ -2,45 +2,19 @@
 
 return [
 
-    'default' => env('MAIL_MAILER', 'log'), // en Render tienes MAIL_MAILER=brevo
+    'default' => env('MAIL_MAILER', 'smtp'),
 
     'mailers' => [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME'),
-            'url' => env('MAIL_URL'),
             'host' => env('MAIL_HOST', '127.0.0.1'),
-            'port' => env('MAIL_PORT', 2525),
+            'port' => env('MAIL_PORT', 587),
+            'encryption' => env('MAIL_ENCRYPTION', 'tls'),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
             'timeout' => null,
-            'local_domain' => env(
-                'MAIL_EHLO_DOMAIN',
-                parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)
-            ),
-        ],
-
-        // 👇 NUEVO mailer para Brevo (separado, no dentro de smtp)
-        'brevo' => [
-            'transport' => 'brevo',
-        ],
-
-        'ses' => [
-            'transport' => 'ses',
-        ],
-
-        'postmark' => [
-            'transport' => 'postmark',
-        ],
-
-        'resend' => [
-            'transport' => 'resend',
-        ],
-
-        'sendmail' => [
-            'transport' => 'sendmail',
-            'path' => env('MAIL_SENDMAIL_PATH', '/usr/sbin/sendmail -bs -i'),
+            'local_domain' => env('MAIL_EHLO_DOMAIN'),
         ],
 
         'log' => [
@@ -52,24 +26,7 @@ return [
             'transport' => 'array',
         ],
 
-        'failover' => [
-            'transport' => 'failover',
-            'mailers' => [
-                'smtp',
-                'log',
-            ],
-            'retry_after' => 60,
-        ],
-
-        'roundrobin' => [
-            'transport' => 'roundrobin',
-            'mailers' => [
-                'ses',
-                'postmark',
-            ],
-            'retry_after' => 60,
-        ],
-
+        // demás mailers que trae Laravel los puedes dejar igual...
     ],
 
     'from' => [
