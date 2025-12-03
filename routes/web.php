@@ -9,42 +9,30 @@ use App\Http\Controllers\Admin\AdminAuthController;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Mail;
 
-// ------------------------------
 // HOME
-// ------------------------------
 Route::get('/', function () {
     return ['Laravel' => app()->version()];
 });
 
-// ----------------------------------------------------
-// 🔹 RUTA TEMPORAL PARA PRUEBA DE CORREO CON BREVO 🔹
-// (BORRAR O PROTEGER DESPUÉS)
-// ----------------------------------------------------
+// TEST MAIL (puedes borrarla luego)
 Route::get('/test-mail', function () {
-    Mail::raw('¡Hola Paola! Esto es una prueba desde Brevo API 📨', function ($m) {
-        $m->to('risanchez@alonsoalonsolaw.com')   // 👈 pon aquí tu correo real
-          ->subject('Prueba Brevo vía API ✔️');
+    Mail::raw('¡Hola Paola! Esto es una prueba desde Brevo SMTP 📨', function ($m) {
+        $m->to('risanchez@alonsoalonsolaw.com')
+          ->subject('Prueba Brevo vía SMTP ✔️');
     });
 
     return 'Correo de prueba enviado (si no ves error).';
 });
 
-// ----------------------------------------------------
-// 🔹 DEBUG: VER SI BREVO_API_KEY ESTÁ CARGADA 🔹
-// (ÚSALA SOLO PARA PROBAR, LUEGO BORRA ESTA RUTA)
-// ----------------------------------------------------
-Route::get('/debug-brevo-key', function () {
-    $key = env('BREVO_API_KEY');
-
-    return [
-        'set'    => $key ? true : false,
-        'length' => $key ? strlen($key) : 0,
-    ];
+// RESET CONFIG (borrar cuando ya no lo necesites)
+Route::get('/reset-config', function () {
+    Artisan::call('config:clear');
+    Artisan::call('cache:clear');
+    Artisan::call('optimize:clear');
+    return 'Config cleared ✔️';
 });
 
-// ----------------------------------------------------
-// 🔹 RUTA TEMPORAL PARA CREAR / ACTUALIZAR EL ADMIN 🔹
-// ----------------------------------------------------
+// RUTA TEMPORAL PARA CREAR / ACTUALIZAR EL ADMIN
 Route::get('/run-admin-seeder', function () {
     try {
         Artisan::call('db:seed', [
@@ -61,9 +49,7 @@ Route::get('/run-admin-seeder', function () {
 Route::post('/api/admin/login', [AdminAuthController::class, 'login'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
 
-// ------------------------------
 // LOGIN: usuario autenticado
-// ------------------------------
 Route::middleware(['auth:sanctum'])->get('/api/user', function (Request $request) {
     $user = $request->user();
 
@@ -75,15 +61,11 @@ Route::middleware(['auth:sanctum'])->get('/api/user', function (Request $request
     ];
 });
 
-// ------------------------------
 // FORMULARIO PÚBLICO DE RESERVAS
-// ------------------------------
 Route::post('/api/bookings', [BookingController::class, 'store'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
 
-// ------------------------------
 // CLASES DISPONIBLES - PÚBLICO
-// ------------------------------
 Route::get('/api/classes', [ClassSessionController::class, 'indexPublic']);
 Route::post('/classes', [ClassSessionController::class, 'store'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
@@ -92,12 +74,10 @@ Route::put('/classes/{id}', [ClassSessionController::class, 'update'])
 Route::delete('/classes/{id}', [ClassSessionController::class, 'destroy'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
 
-// ------------------------------
 // ADMIN (todas protegidas con Sanctum)
-// ------------------------------
 Route::middleware(['auth:sanctum'])->group(function () {
 
-    // ----- RESERVAS -----
+    // RESERVAS
     Route::get('/api/admin/bookings', [BookingController::class, 'index']);
     Route::put('/api/admin/bookings/{id}', [BookingController::class, 'update'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
@@ -106,20 +86,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/api/admin/bookings/{id}/status', [BookingController::class, 'updateStatus'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
-    // ----- CLASES DISPONIBLES (CRUD) -----
+    // CLASES DISPONIBLES (CRUD)
     Route::get('/api/admin/classes', [ClassSessionController::class, 'index']);
-
     Route::post('/api/admin/classes', [ClassSessionController::class, 'store'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
-
     Route::put('/api/admin/classes/{id}', [ClassSessionController::class, 'update'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
-
     Route::delete('/api/admin/classes/{id}', [ClassSessionController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 });
 
-// ------------------------------
 // Auth de Breeze
-// ------------------------------
 require __DIR__ . '/auth.php';

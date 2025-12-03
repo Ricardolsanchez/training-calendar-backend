@@ -17,11 +17,6 @@ return [
             'local_domain' => env('MAIL_EHLO_DOMAIN'),
         ],
 
-        // 👇 NUEVO mailer para Brevo (vía API HTTP)
-        'brevo' => [
-            'transport' => 'brevo',
-        ],
-
         'log' => [
             'transport' => 'log',
             'channel' => env('MAIL_LOG_CHANNEL'),
