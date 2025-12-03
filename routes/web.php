@@ -22,11 +22,11 @@ Route::get('/', function () {
 // ----------------------------------------------------
 Route::get('/test-mail', function () {
     Mail::raw('¡Hola Paola! Esto es una prueba desde Brevo API 📨', function ($m) {
-        $m->to('TU_CORREO@GMAIL.COM')   // 👈 pon aquí el correo donde quieres recibir
-          ->subject('Prueba Brevo desde Render ✔️');
+        $m->to('TU_CORREO@GMAIL.COM')
+            ->subject('Prueba Brevo vía API ✔️');
     });
 
-    return 'Correo de prueba enviado.';
+    return 'Correo de prueba enviado (si no ves error).';
 });
 
 // ----------------------------------------------------

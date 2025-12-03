@@ -17,6 +17,11 @@ return [
             'local_domain' => env('MAIL_EHLO_DOMAIN'),
         ],
 
+        // 👇 NUEVO mailer para Brevo (vía API HTTP)
+        'brevo' => [
+            'transport' => 'brevo',
+        ],
+
         'log' => [
             'transport' => 'log',
             'channel' => env('MAIL_LOG_CHANNEL'),
@@ -26,7 +31,7 @@ return [
             'transport' => 'array',
         ],
 
-        // demás mailers que trae Laravel los puedes dejar igual...
+        // ... el resto lo puedes dejar tal como estaba
     ],
 
     'from' => [
