@@ -7,7 +7,7 @@ use App\Http\Controllers\Admin\ClassSessionController;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use App\Http\Controllers\Admin\AdminAuthController;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Mail;
+use App\Services\BrevoMailer;
 
 // HOME
 Route::get('/', function () {
@@ -16,12 +16,17 @@ Route::get('/', function () {
 
 // TEST MAIL (puedes borrarla luego)
 Route::get('/test-mail', function () {
-    Mail::raw('¡Hola Paola! Esto es una prueba usando SMTP Brevo 📨', function ($m) {
-        $m->to('risanchez@alonsoalonsolaw.com')
-            ->subject('Prueba SMTP Brevo desde Render ✔️');
-    });
+    $ok = BrevoMailer::send(
+        'risanchez@alonsoalonsolaw.com',
+        'Ricardo Sanchez',
+        'Prueba Brevo HTTP desde Render ✔️',
+        '<p>Hola Paola, esto es una prueba usando la <strong>API HTTP de Brevo</strong> 📨</p>',
+        'Hola Paola, esto es una prueba usando la API HTTP de Brevo.'
+    );
 
-    return 'Correo de prueba enviado (si no ves error).';
+    return $ok
+        ? 'Correo de prueba enviado ✔️'
+        : 'Falló el envío, revisa logs en Laravel.';
 });
 
 // RESET CONFIG (borrar cuando ya no lo necesites)
