@@ -8,7 +8,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\View;
-use App\Services\BrevoMailer; // 👈 Servicio HTTP de Brevo
+
+// 👇 NUEVO: usamos el mailer por Google Apps Script
+use App\Services\GoogleScriptMailer;
 
 class BookingController extends Controller
 {
@@ -83,9 +85,9 @@ class BookingController extends Controller
         $class->spots_left = $class->spots_left - 1;
         $class->save();
 
-        // 6) Enviar correo de confirmación usando BrevoMailer (HTTP API)
+        // 6) Enviar correo de confirmación usando GoogleScriptMailer (HTTP API)
         try {
-            Log::info('Intentando enviar correo de reserva via Brevo', [
+            Log::info('Intentando enviar correo de reserva via GoogleScriptMailer', [
                 'booking_id' => $booking->id,
                 'email'      => $booking->email,
             ]);
@@ -95,15 +97,21 @@ class BookingController extends Controller
                 'classSession' => $class,
             ])->render();
 
-            BrevoMailer::send(
+            $sent = GoogleScriptMailer::send(
                 $booking->email,
                 $booking->name,
                 'Your class reservation has been received! ✅',
                 $html,
                 'Your class reservation has been received!'
             );
+
+            if (!$sent) {
+                Log::warning('GoogleScriptMailer::send devolvió false en store()', [
+                    'booking_id' => $booking->id,
+                ]);
+            }
         } catch (\Throwable $e) {
-            Log::error('Error enviando ClassBookedMail via Brevo', [
+            Log::error('Error enviando ClassBookedMail via GoogleScriptMailer', [
                 'booking_id' => $booking->id,
                 'error'      => $e->getMessage(),
             ]);
@@ -190,12 +198,12 @@ class BookingController extends Controller
         }
 
         $validated = $request->validate([
-            'name'        => 'sometimes|required|string|max:255',
-            'email'       => 'sometimes|required|email',
-            'notes'       => 'nullable|string',
-            'start_date'  => 'sometimes|required|date',
-            'end_date'    => 'sometimes|required|date|after_or_equal:start_date',
-            'trainer_name'=> 'nullable|string|max:255',
+            'name'         => 'sometimes|required|string|max:255',
+            'email'        => 'sometimes|required|email',
+            'notes'        => 'nullable|string',
+            'start_date'   => 'sometimes|required|date',
+            'end_date'     => 'sometimes|required|date|after_or_equal:start_date',
+            'trainer_name' => 'nullable|string|max:255',
         ]);
 
         $booking->update($validated);
@@ -216,15 +224,15 @@ class BookingController extends Controller
         }
 
         $map = [
-            'Sergio Osorio'   => 'seosorio@alonsoalonsolaw.com',
-            'Monica Mendoza'  => 'mmendoza@alonsoalonsolaw.com',
-            'Kelvin Hodgson'  => 'kelvinh@alonsoalonsolaw.com',
-            'Edma Murillo'    => 'emurillo@alonsoalonsolaw.com',
-            'Dora Ramirez'    => 'dramirez@alonsoalonsolaw.com',
-            'Ada Perez'       => 'adaperez@alonsoalonsolaw.com',
-            'Josias Mendez'   => 'josias@alonsoalonsolaw.com',
-            'Ricardo Sanchez' => 'risanchez@alonsoalonsolaw.com',
-            'Giselle Cárdenas'=> 'giscardenas@alonsoalonsolaw.com',
+            'Sergio Osorio'    => 'seosorio@alonsoalonsolaw.com',
+            'Monica Mendoza'   => 'mmendoza@alonsoalonsolaw.com',
+            'Kelvin Hodgson'   => 'kelvinh@alonsoalonsolaw.com',
+            'Edma Murillo'     => 'emurillo@alonsoalonsolaw.com',
+            'Dora Ramirez'     => 'dramirez@alonsoalonsolaw.com',
+            'Ada Perez'        => 'adaperez@alonsoalonsolaw.com',
+            'Josias Mendez'    => 'josias@alonsoalonsolaw.com',
+            'Ricardo Sanchez'  => 'risanchez@alonsoalonsolaw.com',
+            'Giselle Cárdenas' => 'giscardenas@alonsoalonsolaw.com',
         ];
 
         return $map[$trainerName] ?? null;
@@ -268,7 +276,7 @@ class BookingController extends Controller
 
                 // 4.1 Correo al participante
                 try {
-                    Log::info('Intentando enviar correo de aceptación al participante via Brevo', [
+                    Log::info('Intentando enviar correo de aceptación al participante via GoogleScriptMailer', [
                         'booking_id' => $booking->id,
                         'email'      => $booking->email,
                     ]);
@@ -279,15 +287,21 @@ class BookingController extends Controller
                         'calendarUrl' => $calendarUrl ?: $class->calendar_url,
                     ])->render();
 
-                    BrevoMailer::send(
+                    $sentUser = GoogleScriptMailer::send(
                         $booking->email,
                         $booking->name,
                         '✅ Your class has been confirmed',
                         $htmlUser,
                         'Your class has been confirmed.'
                     );
+
+                    if (!$sentUser) {
+                        Log::warning('GoogleScriptMailer::send devolvió false para participante en updateStatus()', [
+                            'booking_id' => $booking->id,
+                        ]);
+                    }
                 } catch (\Throwable $e) {
-                    Log::error('Error enviando ClassAcceptedMail via Brevo', [
+                    Log::error('Error enviando ClassAcceptedMail via GoogleScriptMailer', [
                         'booking_id' => $booking->id,
                         'error'      => $e->getMessage(),
                     ]);
@@ -298,7 +312,7 @@ class BookingController extends Controller
                     $trainerEmail = $this->getTrainerEmail($class->trainer_name);
 
                     if ($trainerEmail) {
-                        Log::info('Intentando enviar correo al trainer via Brevo', [
+                        Log::info('Intentando enviar correo al trainer via GoogleScriptMailer', [
                             'booking_id' => $booking->id,
                             'trainer'    => $class->trainer_name,
                             'email'      => $trainerEmail,
@@ -309,16 +323,23 @@ class BookingController extends Controller
                             'class'   => $class,
                         ])->render();
 
-                        BrevoMailer::send(
+                        $sentTrainer = GoogleScriptMailer::send(
                             $trainerEmail,
                             $class->trainer_name ?? 'Trainer',
                             'New training session assigned',
                             $htmlTrainer,
                             'New training session assigned.'
                         );
+
+                        if (!$sentTrainer) {
+                            Log::warning('GoogleScriptMailer::send devolvió false para trainer en updateStatus()', [
+                                'booking_id' => $booking->id,
+                                'trainer'    => $class->trainer_name,
+                            ]);
+                        }
                     }
                 } catch (\Throwable $e) {
-                    Log::error('Error enviando TrainerClassAcceptedMail via Brevo', [
+                    Log::error('Error enviando TrainerClassAcceptedMail via GoogleScriptMailer', [
                         'booking_id' => $booking->id,
                         'error'      => $e->getMessage(),
                     ]);
