@@ -15,18 +15,6 @@ Route::get('/', function () {
     return ['Laravel' => app()->version()];
 });
 
-// TEST MAIL (puedes borrarla luego)
-Route::get('/test-brevo-api', function () {
-    $ok = BrevoMailer::send(
-        'TUCORREO@GMAIL.COM',   // usa un Gmail tuyo normal
-        'Paola',
-        'Test Brevo API ✅',
-        '<p>Hola Paola, esto es una prueba directa desde la API HTTP de Brevo.</p>',
-        'Hola Paola, esto es una prueba directa desde la API HTTP de Brevo.'
-    );
-
-    return $ok ? 'OK ✅ (revisa si llegó el correo)' : 'Fallo ❌ (mira los logs en Render)';
-});
 
 Route::get('/test-google-mail', function () {
     $ok = GoogleScriptMailer::send(
