@@ -15,8 +15,8 @@ class GoogleScriptMailer
         ?string $text = null
     ): bool {
         // 👇 OJO: aquí van NOMBRES de variables de entorno, no la URL literal
-        $url    = env('GOOGLE_SCRIPT_MAILER_URL');    // tu Web App URL
-        $secret = env('GOOGLE_SCRIPT_MAILER_SECRET'); // tu token/secret del script
+        $url    = env('https://script.google.com/a/macros/alonsoalonsolaw.com/s/AKfycbwsdg7ucuyNwx7kHi6DppfIS_76GtGm4TEzcTf9nU_NE5jdVlgPoVUaO2CJcU7rV4vXKA/exec');    // tu Web App URL
+        $secret = env('A7kP2sM9vQ1tR4bW6yZ8uH3c'); // tu token/secret del script
 
         if (!$url || !$secret) {
             Log::error('GoogleScriptMailer: URL o SECRET no configurados', [
