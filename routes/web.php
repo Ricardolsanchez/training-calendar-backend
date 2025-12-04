@@ -17,7 +17,12 @@ use App\Services\GoogleScriptMailer;
 Route::get('/', function () {
     return ['Laravel' => app()->version()];
 });
-
+Route::get('/reset-config', function () {
+    Artisan::call('config:clear');
+    Artisan::call('cache:clear');
+    Artisan::call('optimize:clear');
+    return 'Config cleared ✔️';
+});
 // ========================== HELPERS TEMPORALES ==========================
 
 // 🔹 Test rápido del GoogleScriptMailer
