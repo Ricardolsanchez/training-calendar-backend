@@ -1,24 +1,29 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Http\Request;
+
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\Admin\ClassSessionController;
-use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use App\Http\Controllers\Admin\AdminAuthController;
-use Illuminate\Support\Facades\Artisan;
-use App\Services\BrevoMailer;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+
 use App\Services\GoogleScriptMailer;
 
-// HOME
+// ========================== HOME / HEALTHCHECK ==========================
+
 Route::get('/', function () {
     return ['Laravel' => app()->version()];
 });
 
+// ========================== HELPERS TEMPORALES ==========================
 
+// 🔹 Test rápido del GoogleScriptMailer
 Route::get('/test-google-mail', function () {
     $ok = GoogleScriptMailer::send(
-        'risanchez@alonsoalonsolaw.com',   // cambia esto
+        'risanchez@alonsoalonsolaw.com',   // cámbialo si quieres probar otro correo
         'Paola Test',
         'Test desde GoogleScriptMailer ✅',
         '<h1>Hola Paola</h1><p>Si ves este correo, el Google Script funciona 🎉</p>',
@@ -28,7 +33,7 @@ Route::get('/test-google-mail', function () {
     return $ok ? 'Correo enviado ✅' : 'Fallo el envío ❌ (revisa logs)';
 });
 
-// RESET CONFIG (borrar cuando ya no lo necesites)
+// 🔹 Reset de cachés de config (bórrala cuando ya no la uses)
 Route::get('/reset-config', function () {
     Artisan::call('config:clear');
     Artisan::call('cache:clear');
@@ -36,7 +41,7 @@ Route::get('/reset-config', function () {
     return 'Config cleared ✔️';
 });
 
-// RUTA TEMPORAL PARA CREAR / ACTUALIZAR EL ADMIN
+// 🔹 Ejecutar seeder de admin (también temporal)
 Route::get('/run-admin-seeder', function () {
     try {
         Artisan::call('db:seed', [
@@ -50,55 +55,77 @@ Route::get('/run-admin-seeder', function () {
     }
 });
 
+// ========================== AUTH ADMIN (API) ==========================
+
+// Login admin (usa Sanctum, sin CSRF porque viene del front)
 Route::post('/api/admin/login', [AdminAuthController::class, 'login'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
 
-// LOGIN: usuario autenticado
+// Datos del usuario autenticado (admin o no)
 Route::middleware(['auth:sanctum'])->get('/api/user', function (Request $request) {
     $user = $request->user();
 
     return [
-        'id' => $user->id,
-        'email' => $user->email,
-        'name' => $user->name,
+        'id'       => $user->id,
+        'email'    => $user->email,
+        'name'     => $user->name,
         'is_admin' => (bool) ($user->is_admin ?? false),
     ];
 });
 
-// FORMULARIO PÚBLICO DE RESERVAS
+// Logout admin (cierra sesión web + invalida sesion)
+Route::middleware(['auth:sanctum'])->post('/api/logout', function (Request $request) {
+    Auth::guard('web')->logout();
+
+    $request->session()->invalidate();
+    $request->session()->regenerateToken();
+
+    return response()->json([
+        'ok'      => true,
+        'message' => 'Logged out',
+    ]);
+});
+
+// ========================== FORMULARIO PÚBLICO ==========================
+
+// Crear reserva pública (sin CSRF)
 Route::post('/api/bookings', [BookingController::class, 'store'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
 
-// CLASES DISPONIBLES - PÚBLICO
+// Listar clases disponibles (público)
 Route::get('/api/classes', [ClassSessionController::class, 'indexPublic']);
-Route::post('/classes', [ClassSessionController::class, 'store'])
-    ->withoutMiddleware([ValidateCsrfToken::class]);
-Route::put('/classes/{id}', [ClassSessionController::class, 'update'])
-    ->withoutMiddleware([ValidateCsrfToken::class]);
-Route::delete('/classes/{id}', [ClassSessionController::class, 'destroy'])
-    ->withoutMiddleware([ValidateCsrfToken::class]);
 
-// ADMIN (todas protegidas con Sanctum)
+// ========================== ADMIN API PROTEGIDA ==========================
+
 Route::middleware(['auth:sanctum'])->group(function () {
 
-    // RESERVAS
+    // ---------- RESERVAS (ADMIN) ----------
+
     Route::get('/api/admin/bookings', [BookingController::class, 'index']);
+
     Route::put('/api/admin/bookings/{id}', [BookingController::class, 'update'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
+
     Route::delete('/api/admin/bookings/{id}', [BookingController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
+
     Route::put('/api/admin/bookings/{id}/status', [BookingController::class, 'updateStatus'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
-    // CLASES DISPONIBLES (CRUD)
+    // ---------- CLASES (ADMIN CRUD) ----------
+
     Route::get('/api/admin/classes', [ClassSessionController::class, 'index']);
+
     Route::post('/api/admin/classes', [ClassSessionController::class, 'store'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
+
     Route::put('/api/admin/classes/{id}', [ClassSessionController::class, 'update'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
+
     Route::delete('/api/admin/classes/{id}', [ClassSessionController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 });
 
-// Auth de Breeze
+// ========================== AUTH BREEZE POR DEFECTO =====================
+
 require __DIR__ . '/auth.php';
