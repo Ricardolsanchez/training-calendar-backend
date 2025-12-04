@@ -8,6 +8,7 @@ use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use App\Http\Controllers\Admin\AdminAuthController;
 use Illuminate\Support\Facades\Artisan;
 use App\Services\BrevoMailer;
+use App\Services\GoogleScriptMailer;
 
 // HOME
 Route::get('/', function () {
@@ -25,6 +26,18 @@ Route::get('/test-brevo-api', function () {
     );
 
     return $ok ? 'OK ✅ (revisa si llegó el correo)' : 'Fallo ❌ (mira los logs en Render)';
+});
+
+Route::get('/test-google-mail', function () {
+    $ok = GoogleScriptMailer::send(
+        'risanchez@alonsoalonsolaw.com',   // cambia esto
+        'Paola Test',
+        'Test desde GoogleScriptMailer ✅',
+        '<h1>Hola Paola</h1><p>Si ves este correo, el Google Script funciona 🎉</p>',
+        'Hola Paola, si ves este correo, el Google Script funciona.'
+    );
+
+    return $ok ? 'Correo enviado ✅' : 'Fallo el envío ❌ (revisa logs)';
 });
 
 // RESET CONFIG (borrar cuando ya no lo necesites)

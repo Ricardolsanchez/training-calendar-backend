@@ -14,13 +14,15 @@ class GoogleScriptMailer
         string $html,
         ?string $text = null
     ): bool {
-        
-        // 👇 AQUÍ sí leemos desde el .env
-        $url    = env('GSCRIPT_MAILER_URL');    
-        $secret = env('GSCRIPT_MAILER_SECRET'); 
+        // 👇 OJO: aquí van NOMBRES de variables de entorno, no la URL literal
+        $url    = env('GOOGLE_SCRIPT_MAILER_URL');    // tu Web App URL
+        $secret = env('GOOGLE_SCRIPT_MAILER_SECRET'); // tu token/secret del script
 
         if (!$url || !$secret) {
-            Log::error('GoogleScriptMailer: URL o SECRET no configurados');
+            Log::error('GoogleScriptMailer: URL o SECRET no configurados', [
+                'url'    => $url,
+                'secret' => $secret ? '***set***' : null,
+            ]);
             return false;
         }
 
@@ -42,7 +44,11 @@ class GoogleScriptMailer
                 return false;
             }
 
-            return $response->json()['ok'] ?? false;
+            $body = $response->json();
+
+            Log::info('GoogleScriptMailer respuesta', ['body' => $body]);
+
+            return $body['ok'] ?? false;
 
         } catch (\Throwable $e) {
             Log::error('GoogleScriptMailer exception', [
