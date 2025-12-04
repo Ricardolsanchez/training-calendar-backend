@@ -8,51 +8,50 @@ use Illuminate\Support\Facades\Log;
 class GoogleScriptMailer
 {
     public static function send(
-        string $toEmail,
-        string $toName,
+        string $to,
+        ?string $name,
         string $subject,
         string $html,
-        ?string $text = null
+        string $text = ''
     ): bool {
-        // 👇 OJO: aquí van NOMBRES de variables de entorno, no la URL literal
-        $url    = env('https://script.google.com/a/macros/alonsoalonsolaw.com/s/AKfycbwsdg7ucuyNwx7kHi6DppfIS_76GtGm4TEzcTf9nU_NE5jdVlgPoVUaO2CJcU7rV4vXKA/exec');    // tu Web App URL
-        $secret = env('A7kP2sM9vQ1tR4bW6yZ8uH3c'); // tu token/secret del script
+        $url    = config('services.google_script_mailer.url');     // .env
+        $secret = config('services.google_script_mailer.secret');  // .env
 
-        if (!$url || !$secret) {
-            Log::error('GoogleScriptMailer: URL o SECRET no configurados', [
-                'url'    => $url,
-                'secret' => $secret ? '***set***' : null,
-            ]);
-            return false;
-        }
+        $payload = [
+            'secret'  => $secret,
+            'to'      => $to,
+            'subject' => $subject,
+            'html'    => $html,
+            'text'    => $text,
+        ];
 
         try {
-            $response = Http::post($url, [
-                'secret'  => $secret,
-                'to'      => $toEmail,
-                'name'    => $toName,
-                'subject' => $subject,
-                'html'    => $html,
-                'text'    => $text,
+            Log::info('Enviando petición a Google Script', [
+                'url'  => $url,
+                'to'   => $to,
+                'subj' => $subject,
             ]);
 
-            if (!$response->successful()) {
-                Log::error('GoogleScriptMailer error', [
-                    'status' => $response->status(),
-                    'body'   => $response->body(),
-                ]);
+            $response = Http::withHeaders([
+                    'Content-Type' => 'application/json',
+                ])
+                ->post($url, $payload);
+
+            Log::info('Respuesta de Google Script', [
+                'status' => $response->status(),
+                'body'   => $response->body(),
+            ]);
+
+            if (! $response->successful()) {
                 return false;
             }
 
-            $body = $response->json();
-
-            Log::info('GoogleScriptMailer respuesta', ['body' => $body]);
-
-            return $body['ok'] ?? false;
+            $json = $response->json();
+            return isset($json['ok']) && $json['ok'] === true;
 
         } catch (\Throwable $e) {
-            Log::error('GoogleScriptMailer exception', [
-                'message' => $e->getMessage(),
+            Log::error('Error en GoogleScriptMailer::send', [
+                'error' => $e->getMessage(),
             ]);
             return false;
         }
