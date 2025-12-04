@@ -15,18 +15,16 @@ Route::get('/', function () {
 });
 
 // TEST MAIL (puedes borrarla luego)
-Route::get('/test-mail', function () {
+Route::get('/test-brevo-api', function () {
     $ok = BrevoMailer::send(
-        'risanchez@alonsoalonsolaw.com',
-        'Ricardo Sanchez',
-        'Prueba Brevo HTTP desde Render ✔️',
-        '<p>Hola Paola, esto es una prueba usando la <strong>API HTTP de Brevo</strong> 📨</p>',
-        'Hola Paola, esto es una prueba usando la API HTTP de Brevo.'
+        'TUCORREO@GMAIL.COM',   // usa un Gmail tuyo normal
+        'Paola',
+        'Test Brevo API ✅',
+        '<p>Hola Paola, esto es una prueba directa desde la API HTTP de Brevo.</p>',
+        'Hola Paola, esto es una prueba directa desde la API HTTP de Brevo.'
     );
 
-    return $ok
-        ? 'Correo de prueba enviado ✔️'
-        : 'Falló el envío, revisa logs en Laravel.';
+    return $ok ? 'OK ✅ (revisa si llegó el correo)' : 'Fallo ❌ (mira los logs en Render)';
 });
 
 // RESET CONFIG (borrar cuando ya no lo necesites)

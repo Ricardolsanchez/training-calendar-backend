@@ -15,103 +15,107 @@ class BookingController extends Controller
     // ==================== CREAR RESERVA (PÚBLICO) ====================
 
     public function store(Request $request)
-{
-    $validated = $request->validate([
-        // 👇 class_id es OPCIONAL: si llega lo usamos, si no, usamos name + start_date
-        'class_id' => 'nullable|integer',
+    {
+        $validated = $request->validate([
+            // class_id es OPCIONAL: si llega lo usamos, si no, usamos name + start_date
+            'class_id' => 'nullable|integer',
 
-        'name'   => 'required|string|max:255',
-        'email'  => 'required|email',
-        'notes'  => 'nullable|string',
+            'name'   => 'required|string|max:255',
+            'email'  => 'required|email',
+            'notes'  => 'nullable|string',
 
-        'start_date' => 'required|date',
-        'end_date'   => 'required|date|after_or_equal:start_date',
+            'start_date' => 'required|date',
+            'end_date'   => 'required|date|after_or_equal:start_date',
 
-        'trainer_name'            => 'nullable|string|max:255',
-        'original_start_date'     => 'nullable|date',
-        'original_end_date'       => 'nullable|date',
-        'original_training_days'  => 'nullable|integer|min:0',
-        'new_training_days'       => 'nullable|integer|min:0',
-    ]);
-
-    // siempre creamos en pending
-    $validated['status'] = 'pending';
-
-    // 1) Buscar la clase asociada
-    if (!empty($validated['class_id'])) {
-        // a) si viene class_id, buscamos por id
-        $class = ClassSession::find($validated['class_id']);
-    } else {
-        // b) fallback: por título + fecha (como lo tenías antes)
-        $class = ClassSession::where('title', $validated['name'])
-            ->where('date_iso', $validated['start_date'])
-            ->first();
-    }
-
-    if (!$class) {
-        return response()->json([
-            'ok'      => false,
-            'message' => 'Class is not available anymore.',
-        ], 422);
-    }
-
-    // 2) Verificar que este correo NO tenga ya una reserva para esta clase
-    $alreadyBooked = Booking::where('email', $validated['email'])
-        ->where('name', $validated['name'])
-        ->where('start_date', $validated['start_date'])
-        ->exists();
-
-    if ($alreadyBooked) {
-        return response()->json([
-            'ok'      => false,
-            'message' => 'You already have a reservation for this class.',
-        ], 422);
-    }
-
-    // 3) Validar cupos
-    if ($class->spots_left <= 0) {
-        return response()->json([
-            'ok'      => false,
-            'message' => 'We’re sorry! We’ve run out of available seats for this class.',
-        ], 422);
-    }
-
-    // 4) Crear la reserva
-    $booking = Booking::create($validated);
-
-    // 5) Descontar un cupo
-    $class->spots_left = $class->spots_left - 1;
-    $class->save();
-
-    // 6) Enviar correo de confirmación usando BrevoMailer (HTTP API)
-    try {
-        $html = \Illuminate\Support\Facades\View::make('emails.class_booked', [
-            'booking'      => $booking,
-            'classSession' => $class,
-        ])->render();
-
-        \App\Services\BrevoMailer::send(
-            $booking->email,
-            $booking->name,
-            'Your class reservation has been received! ✅',
-            $html,
-            'Your class reservation has been received!'
-        );
-    } catch (\Throwable $e) {
-        Log::error('Error enviando ClassBookedMail via Brevo', [
-            'booking_id' => $booking->id,
-            'error'      => $e->getMessage(),
+            'trainer_name'           => 'nullable|string|max:255',
+            'original_start_date'    => 'nullable|date',
+            'original_end_date'      => 'nullable|date',
+            'original_training_days' => 'nullable|integer|min:0',
+            'new_training_days'      => 'nullable|integer|min:0',
         ]);
-        // no rompemos el endpoint
+
+        // siempre creamos en pending
+        $validated['status'] = 'pending';
+
+        // 1) Buscar la clase asociada
+        if (!empty($validated['class_id'])) {
+            // a) si viene class_id, buscamos por id
+            $class = ClassSession::find($validated['class_id']);
+        } else {
+            // b) fallback: por título + fecha (como antes)
+            $class = ClassSession::where('title', $validated['name'])
+                ->where('date_iso', $validated['start_date'])
+                ->first();
+        }
+
+        if (!$class) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Class is not available anymore.',
+            ], 422);
+        }
+
+        // 2) Verificar que este correo NO tenga ya una reserva para esta clase
+        $alreadyBooked = Booking::where('email', $validated['email'])
+            ->where('name', $validated['name'])
+            ->where('start_date', $validated['start_date'])
+            ->exists();
+
+        if ($alreadyBooked) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'You already have a reservation for this class.',
+            ], 422);
+        }
+
+        // 3) Validar cupos
+        if ($class->spots_left <= 0) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'We’re sorry! We’ve run out of available seats for this class.',
+            ], 422);
+        }
+
+        // 4) Crear la reserva
+        $booking = Booking::create($validated);
+
+        // 5) Descontar un cupo
+        $class->spots_left = $class->spots_left - 1;
+        $class->save();
+
+        // 6) Enviar correo de confirmación usando BrevoMailer (HTTP API)
+        try {
+            Log::info('Intentando enviar correo de reserva via Brevo', [
+                'booking_id' => $booking->id,
+                'email'      => $booking->email,
+            ]);
+
+            $html = View::make('emails.class_booked', [
+                'booking'      => $booking,
+                'classSession' => $class,
+            ])->render();
+
+            BrevoMailer::send(
+                $booking->email,
+                $booking->name,
+                'Your class reservation has been received! ✅',
+                $html,
+                'Your class reservation has been received!'
+            );
+        } catch (\Throwable $e) {
+            Log::error('Error enviando ClassBookedMail via Brevo', [
+                'booking_id' => $booking->id,
+                'error'      => $e->getMessage(),
+            ]);
+            // no rompemos el endpoint
+        }
+
+        return response()->json([
+            'ok'      => true,
+            'message' => 'Reserva creada correctamente',
+            'booking' => $booking,
+        ], 201);
     }
-
-    return response()->json([
-        'ok'      => true,
-        'message' => 'Reserva creada correctamente',
-        'booking' => $booking,
-    ], 201);
-}
-
 
     // ==================== ADMIN: LISTAR RESERVAS ====================
 
@@ -186,12 +190,12 @@ class BookingController extends Controller
         }
 
         $validated = $request->validate([
-            'name'       => 'sometimes|required|string|max:255',
-            'email'      => 'sometimes|required|email',
-            'notes'      => 'nullable|string',
-            'start_date' => 'sometimes|required|date',
-            'end_date'   => 'sometimes|required|date|after_or_equal:start_date',
-            'trainer_name' => 'nullable|string|max:255',
+            'name'        => 'sometimes|required|string|max:255',
+            'email'       => 'sometimes|required|email',
+            'notes'       => 'nullable|string',
+            'start_date'  => 'sometimes|required|date',
+            'end_date'    => 'sometimes|required|date|after_or_equal:start_date',
+            'trainer_name'=> 'nullable|string|max:255',
         ]);
 
         $booking->update($validated);
@@ -264,6 +268,11 @@ class BookingController extends Controller
 
                 // 4.1 Correo al participante
                 try {
+                    Log::info('Intentando enviar correo de aceptación al participante via Brevo', [
+                        'booking_id' => $booking->id,
+                        'email'      => $booking->email,
+                    ]);
+
                     $htmlUser = View::make('emails.class_accepted', [
                         'booking'     => $booking,
                         'class'       => $class,
@@ -289,6 +298,12 @@ class BookingController extends Controller
                     $trainerEmail = $this->getTrainerEmail($class->trainer_name);
 
                     if ($trainerEmail) {
+                        Log::info('Intentando enviar correo al trainer via Brevo', [
+                            'booking_id' => $booking->id,
+                            'trainer'    => $class->trainer_name,
+                            'email'      => $trainerEmail,
+                        ]);
+
                         $htmlTrainer = View::make('emails.trainer_class_accepted', [
                             'booking' => $booking,
                             'class'   => $class,

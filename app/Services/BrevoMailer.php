@@ -32,21 +32,21 @@ class BrevoMailer
         }
 
         $senderEmail = env('MAIL_FROM_ADDRESS', 'no-reply@example.com');
-        $senderName  = env('MAIL_FROM_NAME', 'Training Calendar');
+        $senderName = env('MAIL_FROM_NAME', 'Training Calendar');
 
         $payload = [
             'sender' => [
                 'email' => $senderEmail,
-                'name'  => $senderName,
+                'name' => $senderName,
             ],
             'to' => [
                 [
                     'email' => $toEmail,
-                    'name'  => $toName ?: $toEmail,
+                    'name' => $toName ?: $toEmail,
                 ],
             ],
-            'subject'      => $subject,
-            'htmlContent'  => $html,
+            'subject' => $subject,
+            'htmlContent' => $html,
         ];
 
         if ($text) {
@@ -55,15 +55,20 @@ class BrevoMailer
 
         try {
             $response = Http::withHeaders([
-                'api-key'      => $apiKey,
-                'accept'       => 'application/json',
+                'api-key' => $apiKey,
+                'accept' => 'application/json',
                 'content-type' => 'application/json',
             ])->post('https://api.brevo.com/v3/smtp/email', $payload);
+
+            Log::info('Brevo API response', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
 
             if (!$response->successful()) {
                 Log::error('Brevo API error', [
                     'status' => $response->status(),
-                    'body'   => $response->body(),
+                    'body' => $response->body(),
                 ]);
                 return false;
             }
