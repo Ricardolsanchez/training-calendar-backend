@@ -16,19 +16,20 @@ class BookingController extends Controller
 
     public function store(Request $request)
     {
-        // 👇 Logs para verificar que sí está leyendo las variables del .env
+        // Logs para verificar config del mailer (puedes dejarlos o quitarlos luego)
         Log::info('GOOGLE URL ES:', [
             'url' => config('services.google_script_mailer.url'),
         ]);
 
         Log::info('GOOGLE SECRET ES:', [
-            'secret' => config('services.google_script_mailer.secret'),
+            'secret_present' => config('services.google_script_mailer.secret') ? true : false,
         ]);
 
         $validated = $request->validate([
+            // class_id es OPCIONAL
             'class_id' => 'nullable|integer',
 
-            'name'   => 'required|string|max:255',
+            'name'   => 'required|string|max:255',  // título de la clase
             'email'  => 'required|email',
             'notes'  => 'nullable|string',
 
@@ -47,8 +48,10 @@ class BookingController extends Controller
 
         // 1) Buscar la clase asociada
         if (!empty($validated['class_id'])) {
+            // a) preferimos class_id si viene
             $class = ClassSession::find($validated['class_id']);
         } else {
+            // b) fallback: por título + fecha (como venías manejando)
             $class = ClassSession::where('title', $validated['name'])
                 ->where('date_iso', $validated['start_date'])
                 ->first();
@@ -82,8 +85,15 @@ class BookingController extends Controller
             ], 422);
         }
 
-        // 4) Crear la reserva
-        $booking = Booking::create($validated);
+        // 4) Crear la reserva (si tienes columna class_id en bookings, la usamos)
+        if (!empty($validated['class_id'])) {
+            $bookingData = $validated;
+        } else {
+            $bookingData           = $validated;
+            $bookingData['class_id'] = $class->id ?? null;
+        }
+
+        $booking = Booking::create($bookingData);
 
         // 5) Descontar un cupo
         $class->spots_left = $class->spots_left - 1;
@@ -128,5 +138,271 @@ class BookingController extends Controller
         ], 201);
     }
 
-    // ... (resto del controller igual que lo tenías)
+    // ==================== ADMIN: LISTAR RESERVAS ====================
+
+    public function index(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user || !$user->is_admin) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'No autorizado',
+            ], 403);
+        }
+
+        $bookings = Booking::orderBy('created_at', 'desc')->get();
+
+        // Adjuntar calendar_url de la clase a cada booking
+        $bookings = $bookings->map(function (Booking $b) {
+            $class = null;
+
+            if (!empty($b->class_id)) {
+                $class = ClassSession::find($b->class_id);
+            } else {
+                $class = ClassSession::where('title', $b->name)
+                    ->where('date_iso', $b->start_date)
+                    ->first();
+            }
+
+            $b->setAttribute('calendar_url', $class?->calendar_url);
+
+            return $b;
+        });
+
+        return response()->json([
+            'ok'       => true,
+            'message'  => 'Listado de reservas',
+            'bookings' => $bookings,
+        ]);
+    }
+
+    // ==================== ADMIN: ELIMINAR RESERVA ====================
+
+    public function destroy(string $id)
+    {
+        $booking = Booking::find($id);
+
+        if (!$booking) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Reserva no encontrada',
+            ], 404);
+        }
+
+        // Liberar cupo en la clase (si existe)
+        $class = null;
+
+        if (!empty($booking->class_id)) {
+            $class = ClassSession::find($booking->class_id);
+        } else {
+            $class = ClassSession::where('title', $booking->name)
+                ->where('date_iso', $booking->start_date)
+                ->first();
+        }
+
+        if ($class) {
+            $class->spots_left = $class->spots_left + 1;
+            $class->save();
+        }
+
+        $booking->delete();
+
+        return response()->json([
+            'ok'      => true,
+            'message' => 'Reserva eliminada correctamente',
+        ]);
+    }
+
+    // ==================== ADMIN: ACTUALIZAR RESERVA ====================
+
+    public function update(Request $request, string $id)
+    {
+        $booking = Booking::find($id);
+
+        if (!$booking) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Reserva no encontrada',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'name'         => 'sometimes|required|string|max:255',
+            'email'        => 'sometimes|required|email',
+            'notes'        => 'nullable|string',
+            'start_date'   => 'sometimes|required|date',
+            'end_date'     => 'sometimes|required|date|after_or_equal:start_date',
+            'trainer_name' => 'nullable|string|max:255',
+        ]);
+
+        $booking->update($validated);
+
+        return response()->json([
+            'ok'      => true,
+            'message' => 'Reserva actualizada correctamente',
+            'booking' => $booking,
+        ]);
+    }
+
+    // ==================== HELPERS ====================
+
+    private function getTrainerEmail(?string $trainerName): ?string
+    {
+        if (!$trainerName) {
+            return null;
+        }
+
+        $map = [
+            'Sergio Osorio'    => 'seosorio@alonsoalonsolaw.com',
+            'Monica Mendoza'   => 'mmendoza@alonsoalonsolaw.com',
+            'Kelvin Hodgson'   => 'kelvinh@alonsoalonsolaw.com',
+            'Edma Murillo'     => 'emurillo@alonsoalonsolaw.com',
+            'Dora Ramirez'     => 'dramirez@alonsoalonsolaw.com',
+            'Ada Perez'        => 'adaperez@alonsoalonsolaw.com',
+            'Josias Mendez'    => 'josias@alonsoalonsolaw.com',
+            'Ricardo Sanchez'  => 'risanchez@alonsoalonsolaw.com',
+            'Giselle Cárdenas' => 'giscardenas@alonsoalonsolaw.com',
+        ];
+
+        return $map[$trainerName] ?? null;
+    }
+
+    // ==================== ADMIN: CAMBIAR ESTADO (ACCEPT / DENY) ====================
+
+    public function updateStatus(Request $request, string $id)
+    {
+        try {
+            $booking = Booking::findOrFail($id);
+
+            $validated = $request->validate([
+                'status'       => 'required|in:accepted,denied',
+                'calendar_url' => 'nullable|string|max:2048',
+            ]);
+
+            // 1) Actualizar estado de la reserva
+            $booking->status = $validated['status'];
+            $booking->save();
+
+            // 2) Clase asociada (por class_id o por título+fecha)
+            if (!empty($booking->class_id)) {
+                $class = ClassSession::find($booking->class_id);
+            } else {
+                $class = ClassSession::where('title', $booking->name)
+                    ->where('date_iso', $booking->start_date)
+                    ->first();
+            }
+
+            $calendarUrl = $validated['calendar_url'] ?? null;
+
+            // 3) Guardar calendar_url SOLO si la columna existe en la tabla
+            if ($class && $calendarUrl && Schema::hasColumn('class_sessions', 'calendar_url')) {
+                $class->calendar_url = $calendarUrl;
+                $class->save();
+            } elseif ($class && $calendarUrl && !Schema::hasColumn('class_sessions', 'calendar_url')) {
+                Log::warning('class_sessions no tiene columna calendar_url en producción', [
+                    'class_id' => $class->id,
+                ]);
+            }
+
+            // 4) Enviar correos si se aceptó
+            if ($booking->status === 'accepted' && $class) {
+
+                // 4.1 Correo al participante
+                try {
+                    Log::info('Intentando enviar correo de aceptación al participante via GoogleScriptMailer', [
+                        'booking_id' => $booking->id,
+                        'email'      => $booking->email,
+                    ]);
+
+                    $htmlUser = View::make('emails.class_accepted', [
+                        'booking'     => $booking,
+                        'class'       => $class,
+                        'calendarUrl' => $calendarUrl ?: $class->calendar_url,
+                    ])->render();
+
+                    $sentUser = GoogleScriptMailer::send(
+                        $booking->email,
+                        $booking->name,
+                        '✅ Your class has been confirmed',
+                        $htmlUser,
+                        'Your class has been confirmed.'
+                    );
+
+                    if (!$sentUser) {
+                        Log::warning('GoogleScriptMailer::send devolvió false para participante en updateStatus()', [
+                            'booking_id' => $booking->id,
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    Log::error('Error enviando ClassAcceptedMail via GoogleScriptMailer', [
+                        'booking_id' => $booking->id,
+                        'error'      => $e->getMessage(),
+                    ]);
+                }
+
+                // 4.2 Correo al trainer
+                try {
+                    $trainerEmail = $this->getTrainerEmail($class->trainer_name);
+
+                    if ($trainerEmail) {
+                        Log::info('Intentando enviar correo al trainer via GoogleScriptMailer', [
+                            'booking_id' => $booking->id,
+                            'trainer'    => $class->trainer_name,
+                            'email'      => $trainerEmail,
+                        ]);
+
+                        $htmlTrainer = View::make('emails.trainer_class_accepted', [
+                            'booking' => $booking,
+                            'class'   => $class,
+                        ])->render();
+
+                        $sentTrainer = GoogleScriptMailer::send(
+                            $trainerEmail,
+                            $class->trainer_name ?? 'Trainer',
+                            'New training session assigned',
+                            $htmlTrainer,
+                            'New training session assigned.'
+                        );
+
+                        if (!$sentTrainer) {
+                            Log::warning('GoogleScriptMailer::send devolvió false para trainer en updateStatus()', [
+                                'booking_id' => $booking->id,
+                                'trainer'    => $class->trainer_name,
+                            ]);
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Log::error('Error enviando TrainerClassAcceptedMail via GoogleScriptMailer', [
+                        'booking_id' => $booking->id,
+                        'error'      => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // 5) Incluir calendar_url en la respuesta para que el front actualice la tabla
+            if (isset($class) && $class && Schema::hasColumn('class_sessions', 'calendar_url')) {
+                $booking->setAttribute('calendar_url', $class->calendar_url);
+            } else {
+                $booking->setAttribute('calendar_url', $calendarUrl);
+            }
+
+            return response()->json([
+                'ok'      => true,
+                'message' => 'Estado de la reserva actualizado',
+                'booking' => $booking,
+            ]);
+
+        } catch (\Throwable $e) {
+            Log::error('Error en updateStatus', [
+                'booking_id' => $id,
+                'error'      => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Server error updating booking status.',
+            ], 500);
+        }
+    }
 }
