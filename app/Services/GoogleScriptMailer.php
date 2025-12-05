@@ -7,16 +7,6 @@ use Illuminate\Support\Facades\Log;
 
 class GoogleScriptMailer
 {
-    /**
-     * Envía un correo usando el Google Apps Script publicado como web app.
-     *
-     * @param  string      $to      Correo destino
-     * @param  string|null $name    Nombre del destinatario (opcional)
-     * @param  string      $subject Asunto del correo
-     * @param  string      $html    Cuerpo HTML
-     * @param  string      $text    Cuerpo texto plano (opcional)
-     * @return bool
-     */
     public static function send(
         string $to,
         ?string $name,
@@ -24,25 +14,22 @@ class GoogleScriptMailer
         string $html,
         string $text = ''
     ): bool {
-        // 🔹 LEER DIRECTO DESDE env()
-        $url    = env('GOOGLE_SCRIPT_MAILER_URL');
-        $secret = env('GOOGLE_SCRIPT_MAILER_SECRET');
+        // 🔹 Mejor leer desde config(), que ya usa el .env por debajo
+        $url    = config('services.google_script_mailer.url', env('GOOGLE_SCRIPT_MAILER_URL'));
+        $secret = config('services.google_script_mailer.secret', env('GOOGLE_SCRIPT_MAILER_SECRET'));
 
-        // 🔹 Log de comparación env() vs config() (debug)
         Log::info('GoogleScriptMailer ENV vs CONFIG', [
-            'env_url'       => $url,
+            'env_url'       => env('GOOGLE_SCRIPT_MAILER_URL'),
             'config_url'    => config('services.google_script_mailer.url'),
-            'env_secret'    => $secret ? true : false,
+            'env_secret'    => env('GOOGLE_SCRIPT_MAILER_SECRET') ? true : false,
             'config_secret' => config('services.google_script_mailer.secret') ? true : false,
         ]);
 
-        // 🔹 Validar que existan URL y SECRET
         if (! $url || ! $secret) {
             Log::error('GoogleScriptMailer: faltan URL o SECRET', [
-                'url'             => $url,
-                'secret_present'  => $secret ? true : false,
+                'url'            => $url,
+                'secret_present' => $secret ? true : false,
             ]);
-
             return false;
         }
 
@@ -61,10 +48,7 @@ class GoogleScriptMailer
                 'subj' => $subject,
             ]);
 
-            $response = Http::withHeaders([
-                    'Content-Type' => 'application/json',
-                ])
-                ->post($url, $payload);
+            $response = Http::asJson()->post($url, $payload);
 
             Log::info('Respuesta de Google Script', [
                 'status' => $response->status(),
