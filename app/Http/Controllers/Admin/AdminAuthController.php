@@ -10,14 +10,14 @@ class AdminAuthController extends Controller
 {
     public function login(Request $request)
     {
-        // 1) Validar datos
+        // 1. Validar datos
         $credentials = $request->validate([
             'email'    => ['required', 'email'],
-            'password' => ['required'],
+            'password' => ['required', 'string'],
         ]);
 
-        // 2) Intentar autenticación con el guard web
-        if (! Auth::attempt($credentials)) {
+        // 2. Intentar login
+        if (!Auth::attempt($credentials, $request->boolean('remember'))) {
             return response()->json([
                 'message' => 'Invalid credentials',
             ], 401);
@@ -26,23 +26,25 @@ class AdminAuthController extends Controller
         /** @var \App\Models\User $user */
         $user = $request->user();
 
-        // 3) Verificar que sea admin
-        if (! $user->is_admin) {
+        // 3. Verificar admin
+        if (!$user->is_admin) {
+            Auth::logout();
+
             return response()->json([
-                'message' => 'User is not admin',
+                'message' => 'Not authorized',
             ], 403);
         }
 
-        // 4) Opcional: limpiar tokens anteriores
-        $user->tokens()->delete();
+        // 4. Regenerar sesión
+        $request->session()->regenerate();
 
-        // 5) Crear token nuevo
+        // 5. Crear token Sanctum
         $token = $user->createToken('admin-panel')->plainTextToken;
 
-        // 6) Devolver token y datos básicos
         return response()->json([
-            'token' => $token,
-            'user'  => [
+            'message' => 'Login successful',
+            'token'   => $token,
+            'user'    => [
                 'id'       => $user->id,
                 'email'    => $user->email,
                 'name'     => $user->name,

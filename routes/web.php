@@ -79,11 +79,9 @@ Route::get('/test-google-mail', function () {
 |--------------------------------------------------------------------------
 */
 
-// Login admin (sin CSRF porque viene de SPA)
 Route::post('/api/admin/login', [AdminAuthController::class, 'login'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
 
-// Datos del usuario autenticado
 Route::middleware(['auth:sanctum'])->get('/api/user', function (Request $request) {
     $user = $request->user();
     return [
@@ -94,7 +92,6 @@ Route::middleware(['auth:sanctum'])->get('/api/user', function (Request $request
     ];
 });
 
-// Logout admin
 Route::middleware(['auth:sanctum'])->post('/api/logout', function (Request $request) {
     Auth::guard('web')->logout();
     $request->session()->invalidate();
@@ -113,11 +110,9 @@ Route::middleware(['auth:sanctum'])->post('/api/logout', function (Request $requ
 |--------------------------------------------------------------------------
 */
 
-// Crear reserva (sin CSRF)
 Route::post('/api/bookings', [BookingController::class, 'store'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
 
-// Listar clases públicas
 Route::get('/api/classes', [ClassSessionController::class, 'indexPublic']);
 
 
@@ -129,7 +124,7 @@ Route::get('/api/classes', [ClassSessionController::class, 'indexPublic']);
 
 Route::middleware(['auth:sanctum'])->group(function () {
 
-    // ---------- RESERVAS ----------
+    // RESERVAS
     Route::get('/api/admin/bookings', [BookingController::class, 'index']);
 
     Route::put('/api/admin/bookings/{id}', [BookingController::class, 'update'])
@@ -141,7 +136,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/api/admin/bookings/{id}/status', [BookingController::class, 'updateStatus'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
-    // ---------- CLASES ----------
+    // CLASES
     Route::get('/api/admin/classes', [ClassSessionController::class, 'index']);
 
     Route::post('/api/admin/classes', [ClassSessionController::class, 'store'])
@@ -157,7 +152,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| AUTH BREEZE POR DEFECTO
+| AUTH BREEZE
 |--------------------------------------------------------------------------
 */
 
