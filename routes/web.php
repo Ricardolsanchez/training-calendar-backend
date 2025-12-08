@@ -12,23 +12,57 @@ use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 
 use App\Services\GoogleScriptMailer;
 
-// ========================== HOME / HEALTHCHECK ==========================
+/*
+|--------------------------------------------------------------------------
+| HOME / HEALTHCHECK
+|--------------------------------------------------------------------------
+*/
 
 Route::get('/', function () {
     return ['Laravel' => app()->version()];
 });
+
+/*
+|--------------------------------------------------------------------------
+| UTILIDADES TEMPORALES (⚠️ BORRAR DESPUÉS)
+|--------------------------------------------------------------------------
+*/
+
+// 🔹 Reset config y cachés
 Route::get('/reset-config', function () {
     Artisan::call('config:clear');
     Artisan::call('cache:clear');
     Artisan::call('optimize:clear');
-    return 'Config cleared ✔️';
+    return '✔️ Config cleared';
 });
-// ========================== HELPERS TEMPORALES ==========================
 
-// 🔹 Test rápido del GoogleScriptMailer
+// 🔹 Ejecutar migraciones en producción (TEMPORAL)
+Route::get('/run-migrate', function () {
+    try {
+        Artisan::call('migrate', ['--force' => true]);
+        return nl2br(Artisan::output()) . '<br><br>✔️ Migraciones ejecutadas.';
+    } catch (\Throwable $e) {
+        return '❌ Error ejecutando migraciones: ' . $e->getMessage();
+    }
+});
+
+// 🔹 Ejecutar seeder de admin (TEMPORAL)
+Route::get('/run-admin-seeder', function () {
+    try {
+        Artisan::call('db:seed', [
+            '--class' => 'Database\\Seeders\\AdminUserSeeder',
+            '--force' => true,
+        ]);
+        return nl2br(Artisan::output()) . '<br><br>✔️ Admin seedeado correctamente.';
+    } catch (\Throwable $e) {
+        return '❌ Error ejecutando seeder: ' . $e->getMessage();
+    }
+});
+
+// 🔹 Test rápido del Google Script Mailer (opcional)
 Route::get('/test-google-mail', function () {
     $ok = GoogleScriptMailer::send(
-        'risanchez@alonsoalonsolaw.com',   // cámbialo si quieres probar otro correo
+        'risanchez@alonsoalonsolaw.com',
         'Paola Test',
         'Test desde GoogleScriptMailer ✅',
         '<h1>Hola Paola</h1><p>Si ves este correo, el Google Script funciona 🎉</p>',
@@ -38,38 +72,20 @@ Route::get('/test-google-mail', function () {
     return $ok ? 'Correo enviado ✅' : 'Fallo el envío ❌ (revisa logs)';
 });
 
-// 🔹 Reset de cachés de config (bórrala cuando ya no la uses)
-Route::get('/reset-config', function () {
-    Artisan::call('config:clear');
-    Artisan::call('cache:clear');
-    Artisan::call('optimize:clear');
-    return 'Config cleared ✔️';
-});
 
-// 🔹 Ejecutar seeder de admin (también temporal)
-Route::get('/run-admin-seeder', function () {
-    try {
-        Artisan::call('db:seed', [
-            '--class' => 'Database\\Seeders\\AdminUserSeeder',
-            '--force' => true,
-        ]);
+/*
+|--------------------------------------------------------------------------
+| AUTH ADMIN (API)
+|--------------------------------------------------------------------------
+*/
 
-        return nl2br(Artisan::output()) . '<br><br>✅ Admin seedeado correctamente.';
-    } catch (\Throwable $e) {
-        return '❌ Error ejecutando seeder: ' . $e->getMessage();
-    }
-});
-
-// ========================== AUTH ADMIN (API) ==========================
-
-// Login admin (usa Sanctum, sin CSRF porque viene del front)
+// Login admin (sin CSRF porque viene de SPA)
 Route::post('/api/admin/login', [AdminAuthController::class, 'login'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
 
-// Datos del usuario autenticado (admin o no)
+// Datos del usuario autenticado
 Route::middleware(['auth:sanctum'])->get('/api/user', function (Request $request) {
     $user = $request->user();
-
     return [
         'id'       => $user->id,
         'email'    => $user->email,
@@ -78,10 +94,9 @@ Route::middleware(['auth:sanctum'])->get('/api/user', function (Request $request
     ];
 });
 
-// Logout admin (cierra sesión web + invalida sesion)
+// Logout admin
 Route::middleware(['auth:sanctum'])->post('/api/logout', function (Request $request) {
     Auth::guard('web')->logout();
-
     $request->session()->invalidate();
     $request->session()->regenerateToken();
 
@@ -91,21 +106,30 @@ Route::middleware(['auth:sanctum'])->post('/api/logout', function (Request $requ
     ]);
 });
 
-// ========================== FORMULARIO PÚBLICO ==========================
 
-// Crear reserva pública (sin CSRF)
+/*
+|--------------------------------------------------------------------------
+| API PÚBLICA (FORMULARIO)
+|--------------------------------------------------------------------------
+*/
+
+// Crear reserva (sin CSRF)
 Route::post('/api/bookings', [BookingController::class, 'store'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
 
-// Listar clases disponibles (público)
+// Listar clases públicas
 Route::get('/api/classes', [ClassSessionController::class, 'indexPublic']);
 
-// ========================== ADMIN API PROTEGIDA ==========================
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN API PROTEGIDA
+|--------------------------------------------------------------------------
+*/
 
 Route::middleware(['auth:sanctum'])->group(function () {
 
-    // ---------- RESERVAS (ADMIN) ----------
-
+    // ---------- RESERVAS ----------
     Route::get('/api/admin/bookings', [BookingController::class, 'index']);
 
     Route::put('/api/admin/bookings/{id}', [BookingController::class, 'update'])
@@ -117,8 +141,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/api/admin/bookings/{id}/status', [BookingController::class, 'updateStatus'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
-    // ---------- CLASES (ADMIN CRUD) ----------
-
+    // ---------- CLASES ----------
     Route::get('/api/admin/classes', [ClassSessionController::class, 'index']);
 
     Route::post('/api/admin/classes', [ClassSessionController::class, 'store'])
@@ -131,6 +154,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
         ->withoutMiddleware([ValidateCsrfToken::class]);
 });
 
-// ========================== AUTH BREEZE POR DEFECTO =====================
+
+/*
+|--------------------------------------------------------------------------
+| AUTH BREEZE POR DEFECTO
+|--------------------------------------------------------------------------
+*/
 
 require __DIR__ . '/auth.php';
