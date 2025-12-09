@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\ClassSessionController;
 use App\Http\Controllers\Admin\AdminAuthController;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 
+
 use App\Services\GoogleScriptMailer;
 
 /*
@@ -122,7 +123,6 @@ Route::get('/api/classes', [ClassSessionController::class, 'indexPublic']);
 | ADMIN API PROTEGIDA
 |--------------------------------------------------------------------------
 */
-
 Route::middleware(['auth:sanctum'])->group(function () {
 
     // RESERVAS
@@ -137,8 +137,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/api/admin/bookings/{id}/status', [BookingController::class, 'updateStatus'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
-
-    // ================== CLASES (AvailableClass) ==================
+    // 🔹 CLASES: ahora usando ClassController
     Route::get('/api/admin/classes', [ClassController::class, 'index']);
 
     Route::post('/api/admin/classes', [ClassController::class, 'store'])
@@ -150,7 +149,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::delete('/api/admin/classes/{id}', [ClassController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 });
-
 
 /*
 |--------------------------------------------------------------------------

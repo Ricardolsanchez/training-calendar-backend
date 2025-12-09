@@ -4,11 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\AvailableClass;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class ClassController extends Controller
 {
     // =============================
-    // LISTAR TODAS LAS CLASES
+    // LISTAR TODAS LAS CLASES (ADMIN)
     // =============================
     public function index()
     {
@@ -17,35 +18,36 @@ class ClassController extends Controller
         return [
             'classes' => $classes->map(function ($cls) {
                 return [
-                    'id' => $cls->id,
-                    'title' => $cls->title,
-                    'trainer_id' => $cls->trainer_id,
-                    'trainer_name' => null, // por ahora lo manejas en frontend
-                    'start_date' => $cls->start_date,
-                    'end_date' => $cls->end_date,
-                    'start_time' => $cls->start_time,
-                    'end_time' => $cls->end_time,
-                    'modality' => $cls->modality,
-                    'spots_left' => $cls->spots_left,
+                    'id'          => $cls->id,
+                    'title'       => $cls->title,
+                    'trainer_id'  => $cls->trainer_id,
+                    // si tienes columna trainer_name en la tabla, puedes usar:
+                    // 'trainer_name' => $cls->trainer_name,
+                    'trainer_name'=> null, // por ahora lo manejas en frontend
+                    'start_date'  => $cls->start_date,
+                    'end_date'    => $cls->end_date,
+                    'start_time'  => $cls->start_time,
+                    'end_time'    => $cls->end_time,
+                    'modality'    => $cls->modality,
+                    'spots_left'  => $cls->spots_left,
                 ];
             }),
         ];
     }
 
     // =============================
-    // CREAR NUEVA CLASE
+    // CREAR NUEVA CLASE (ADMIN)
     // =============================
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'title' => 'required|string',
-            // 🔴 AQUÍ EL CAMBIO: ya no validamos contra la tabla trainers
+            'title'      => 'required|string',
             'trainer_id' => 'nullable|integer',
             'start_date' => 'required|date',
-            'end_date' => 'required|date',
+            'end_date'   => 'required|date',
             'start_time' => 'required',
-            'end_time' => 'required',
-            'modality' => 'required|in:Online,Presencial',
+            'end_time'   => 'required',
+            'modality'   => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
         ]);
 
@@ -55,25 +57,25 @@ class ClassController extends Controller
     }
 
     // =============================
-    // ACTUALIZAR CLASE
+    // ACTUALIZAR CLASE (ADMIN)
     // =============================
     public function update(Request $request, $id)
     {
-        \Log::info('UPDATE AvailableClass LLEGÓ AQUÍ', [
-            'id' => $id,
+        Log::info('UPDATE AvailableClass LLEGÓ AQUÍ', [
+            'id'      => $id,
             'payload' => $request->all(),
         ]);
 
         $cls = AvailableClass::findOrFail($id);
 
         $validated = $request->validate([
-            'title' => 'required|string',
+            'title'      => 'required|string',
             'trainer_id' => 'nullable|integer',
             'start_date' => 'required|date',
-            'end_date' => 'required|date',
+            'end_date'   => 'required|date',
             'start_time' => 'required',
-            'end_time' => 'required',
-            'modality' => 'required|in:Online,Presencial',
+            'end_time'   => 'required',
+            'modality'   => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
         ]);
 
@@ -83,7 +85,7 @@ class ClassController extends Controller
     }
 
     // =============================
-    // ELIMINAR CLASE
+    // ELIMINAR CLASE (ADMIN)
     // =============================
     public function destroy($id)
     {
