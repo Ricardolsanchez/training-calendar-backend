@@ -6,20 +6,20 @@ use Illuminate\Database\Eloquent\Model;
 
 class AvailableClass extends Model
 {
-    // 👇 IMPORTANTÍSIMO: usar la tabla que SÍ existe
+    // Esta tabla SÍ existe
     protected $table = 'class_sessions';
 
-    // Campos que se pueden asignar masivamente
+    // Solo columnas reales de class_sessions
     protected $fillable = [
         'title',
-        'trainer_id',    // solo si esta columna existe en class_sessions
+        'trainer_name',   // 👈 guardamos el nombre, no el id
         'start_date',
         'end_date',
         'start_time',
         'end_time',
         'modality',
         'spots_left',
-        // 'calendar_url', // descomenta SOLO si la columna existe en la tabla
+        'calendar_url',   // si tienes esta columna
     ];
 
     public $timestamps = true;

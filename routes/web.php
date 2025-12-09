@@ -139,15 +139,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // 🔹 CLASES: ahora usando ClassController
     Route::get('/api/admin/classes', [ClassController::class, 'index']);
-
-    Route::post('/api/admin/classes', [ClassController::class, 'store'])
-        ->withoutMiddleware([ValidateCsrfToken::class]);
-
-    Route::put('/api/admin/classes/{id}', [ClassController::class, 'update'])
-        ->withoutMiddleware([ValidateCsrfToken::class]);
-
-    Route::delete('/api/admin/classes/{id}', [ClassController::class, 'destroy'])
-        ->withoutMiddleware([ValidateCsrfToken::class]);
+    Route::post('/api/admin/classes', [ClassController::class, 'store'])->withoutMiddleware([ValidateCsrfToken::class]);
+    Route::put('/api/admin/classes/{id}', [ClassController::class, 'update'])->withoutMiddleware([ValidateCsrfToken::class]);
+    Route::delete('/api/admin/classes/{id}', [ClassController::class, 'destroy'])->withoutMiddleware([ValidateCsrfToken::class]);
 });
 
 /*
