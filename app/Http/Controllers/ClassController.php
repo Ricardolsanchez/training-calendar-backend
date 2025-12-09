@@ -17,16 +17,16 @@ class ClassController extends Controller
         return [
             'classes' => $classes->map(function ($cls) {
                 return [
-                    'id'          => $cls->id,
-                    'title'       => $cls->title,
-                    'trainer_id'  => $cls->trainer_id,
-                    'trainer_name'=> null, // por ahora lo manejas en frontend
-                    'start_date'  => $cls->start_date,
-                    'end_date'    => $cls->end_date,
-                    'start_time'  => $cls->start_time,
-                    'end_time'    => $cls->end_time,
-                    'modality'    => $cls->modality,
-                    'spots_left'  => $cls->spots_left,
+                    'id' => $cls->id,
+                    'title' => $cls->title,
+                    'trainer_id' => $cls->trainer_id,
+                    'trainer_name' => null, // por ahora lo manejas en frontend
+                    'start_date' => $cls->start_date,
+                    'end_date' => $cls->end_date,
+                    'start_time' => $cls->start_time,
+                    'end_time' => $cls->end_time,
+                    'modality' => $cls->modality,
+                    'spots_left' => $cls->spots_left,
                 ];
             }),
         ];
@@ -38,14 +38,14 @@ class ClassController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'title'      => 'required|string',
+            'title' => 'required|string',
             // 🔴 AQUÍ EL CAMBIO: ya no validamos contra la tabla trainers
             'trainer_id' => 'nullable|integer',
             'start_date' => 'required|date',
-            'end_date'   => 'required|date',
+            'end_date' => 'required|date',
             'start_time' => 'required',
-            'end_time'   => 'required',
-            'modality'   => 'required|in:Online,Presencial',
+            'end_time' => 'required',
+            'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
         ]);
 
@@ -59,17 +59,22 @@ class ClassController extends Controller
     // =============================
     public function update(Request $request, $id)
     {
+
+        \Log::info('UPDATE AVAILABLE CLASS', [
+            'id' => $id,
+            'payload' => $request->all(),
+        ]);
+
         $cls = AvailableClass::findOrFail($id);
 
         $validated = $request->validate([
-            'title'      => 'required|string',
-            // 🔴 MISMO CAMBIO AQUÍ
+            'title' => 'required|string',
             'trainer_id' => 'nullable|integer',
             'start_date' => 'required|date',
-            'end_date'   => 'required|date',
+            'end_date' => 'required|date',
             'start_time' => 'required',
-            'end_time'   => 'required',
-            'modality'   => 'required|in:Online,Presencial',
+            'end_time' => 'required',
+            'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
         ]);
 

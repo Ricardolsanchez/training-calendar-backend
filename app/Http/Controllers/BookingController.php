@@ -389,7 +389,7 @@ class BookingController extends Controller
 
             return response()->json([
                 'ok'      => true,
-                'message' => 'Estado de la reserva actualizado',
+                'message' => 'Booking Updated',
                 'booking' => $booking,
             ]);
 
