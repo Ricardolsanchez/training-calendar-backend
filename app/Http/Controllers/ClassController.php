@@ -59,8 +59,7 @@ class ClassController extends Controller
     // =============================
     public function update(Request $request, $id)
     {
-
-        \Log::info('UPDATE AVAILABLE CLASS', [
+        \Log::info('UPDATE AvailableClass LLEGÓ AQUÍ', [
             'id' => $id,
             'payload' => $request->all(),
         ]);

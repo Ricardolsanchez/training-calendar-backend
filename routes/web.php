@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ClassController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Artisan;
@@ -85,9 +86,9 @@ Route::post('/api/admin/login', [AdminAuthController::class, 'login'])
 Route::middleware(['auth:sanctum'])->get('/api/user', function (Request $request) {
     $user = $request->user();
     return [
-        'id'       => $user->id,
-        'email'    => $user->email,
-        'name'     => $user->name,
+        'id' => $user->id,
+        'email' => $user->email,
+        'name' => $user->name,
         'is_admin' => (bool) ($user->is_admin ?? false),
     ];
 });
@@ -98,7 +99,7 @@ Route::middleware(['auth:sanctum'])->post('/api/logout', function (Request $requ
     $request->session()->regenerateToken();
 
     return response()->json([
-        'ok'      => true,
+        'ok' => true,
         'message' => 'Logged out',
     ]);
 });
@@ -136,16 +137,17 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/api/admin/bookings/{id}/status', [BookingController::class, 'updateStatus'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
-    // CLASES
-    Route::get('/api/admin/classes', [ClassSessionController::class, 'index']);
 
-    Route::post('/api/admin/classes', [ClassSessionController::class, 'store'])
+    // ================== CLASES (AvailableClass) ==================
+    Route::get('/api/admin/classes', [ClassController::class, 'index']);
+
+    Route::post('/api/admin/classes', [ClassController::class, 'store'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
-    Route::put('/api/admin/classes/{id}', [ClassSessionController::class, 'update'])
+    Route::put('/api/admin/classes/{id}', [ClassController::class, 'update'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
-    Route::delete('/api/admin/classes/{id}', [ClassSessionController::class, 'destroy'])
+    Route::delete('/api/admin/classes/{id}', [ClassController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 });
 
