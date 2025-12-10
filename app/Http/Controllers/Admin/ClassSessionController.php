@@ -45,6 +45,7 @@ class ClassSessionController extends Controller
                     'modality'   => $cls->modality,
                     'level'      => $cls->level,
                     'spots_left' => $cls->spots_left,
+                    'description'=> $cls->description,
                 ];
             }),
         ]);
@@ -86,6 +87,7 @@ class ClassSessionController extends Controller
                     'modality'   => $cls->modality,
                     'level'      => $cls->level,
                     'spots_left' => $cls->spots_left,
+                    'description'=> $cls->description,
                 ];
             }),
         ]);
@@ -105,17 +107,19 @@ class ClassSessionController extends Controller
             'end_time'     => 'required',
             'modality'     => 'required|in:Online,Presencial',
             'spots_left'   => 'required|integer|min:0',
+            'description'  => 'nullable|string',
         ]);
 
         $class = new ClassSession();
         $class->title        = $validated['title'];
         $class->trainer_name = $validated['trainer_name'];
         $class->date_iso     = $validated['start_date'];
-        $class->end_date_iso = $validated['end_date']; // 👈 AHORA GUARDAMOS EL FIN
+        $class->end_date_iso = $validated['end_date'];
         $class->time_range   = $validated['start_time'] . ' - ' . $validated['end_time'];
         $class->modality     = $validated['modality'];
         $class->level        = 'General';
         $class->spots_left   = $validated['spots_left'];
+        $class->description  = $validated['description'] ?? null;
         $class->save();
 
         // refrescar por si hay casts/defaults
@@ -138,6 +142,7 @@ class ClassSessionController extends Controller
                 'modality'     => $class->modality,
                 'level'        => $class->level,
                 'spots_left'   => $class->spots_left,
+                'description'  => $class->description,
             ],
         ], 201);
     }
@@ -158,16 +163,18 @@ class ClassSessionController extends Controller
             'end_time'     => 'required',
             'modality'     => 'required|in:Online,Presencial',
             'spots_left'   => 'required|integer|min:0',
+            'description'  => 'nullable|string', // 👈 añadido
         ]);
 
         $class->title        = $validated['title'];
         $class->trainer_name = $validated['trainer_name'];
         $class->date_iso     = $validated['start_date'];
-        $class->end_date_iso = $validated['end_date']; // 👈 TAMBIÉN AQUÍ
+        $class->end_date_iso = $validated['end_date'];
         $class->time_range   = $validated['start_time'] . ' - ' . $validated['end_time'];
         $class->modality     = $validated['modality'];
         $class->level        = 'General';
         $class->spots_left   = $validated['spots_left'];
+        $class->description  = $validated['description'] ?? null;
         $class->save();
 
         $class->refresh();
@@ -189,6 +196,7 @@ class ClassSessionController extends Controller
                 'modality'     => $class->modality,
                 'level'        => $class->level,
                 'spots_left'   => $class->spots_left,
+                'description'  => $class->description, // 👈 devuelto también
             ],
         ]);
     }
