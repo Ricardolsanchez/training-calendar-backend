@@ -3,14 +3,16 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class ClassSession extends Model
 {
-    use HasFactory;
-
+    // 👇 Nombre real de la tabla en Supabase
     protected $table = 'class_sessions';
 
+    // 👇 Si tu tabla NO tiene created_at / updated_at
+    public $timestamps = false;
+
+    // 👇 Campos que se pueden escribir masivamente
     protected $fillable = [
         'title',
         'trainer_name',
@@ -19,6 +21,5 @@ class ClassSession extends Model
         'modality',
         'level',
         'spots_left',
-        'calendar_url'
     ];
 }
