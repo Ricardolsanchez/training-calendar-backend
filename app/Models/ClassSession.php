@@ -17,6 +17,7 @@ class ClassSession extends Model
         'title',
         'trainer_name',
         'date_iso',
+        'end_date_iso',
         'time_range',
         'modality',
         'level',

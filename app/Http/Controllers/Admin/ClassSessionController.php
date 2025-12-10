@@ -19,7 +19,7 @@ class ClassSessionController extends Controller
             'classes' => $classes->map(function (ClassSession $cls) {
 
                 $startDate = $cls->date_iso;
-                $endDate   = $cls->date_iso;
+                $endDate   = $cls->end_date_iso ?? $cls->date_iso;
 
                 $startTime = null;
                 $endTime   = null;
@@ -61,7 +61,7 @@ class ClassSessionController extends Controller
             'classes' => $classes->map(function (ClassSession $cls) {
 
                 $startDate = $cls->date_iso;
-                $endDate   = $cls->date_iso;
+                $endDate   = $cls->end_date_iso ?? $cls->date_iso;
 
                 $startTime = null;
                 $endTime   = null;
@@ -100,7 +100,7 @@ class ClassSessionController extends Controller
             'title'        => 'required|string',
             'trainer_name' => 'required|string',
             'start_date'   => 'required|date',
-            'end_date'     => 'required|date',
+            'end_date'     => 'required|date|after_or_equal:start_date',
             'start_time'   => 'required',
             'end_time'     => 'required',
             'modality'     => 'required|in:Online,Presencial',
@@ -110,8 +110,9 @@ class ClassSessionController extends Controller
         $class = new ClassSession();
         $class->title        = $validated['title'];
         $class->trainer_name = $validated['trainer_name'];
-        $class->date_iso     = $validated['start_date']; // solo guardamos una fecha
-        $class->time_range   = $validated['start_time'].' - '.$validated['end_time'];
+        $class->date_iso     = $validated['start_date'];
+        $class->end_date_iso = $validated['end_date']; // 👈 AHORA GUARDAMOS EL FIN
+        $class->time_range   = $validated['start_time'] . ' - ' . $validated['end_time'];
         $class->modality     = $validated['modality'];
         $class->level        = 'General';
         $class->spots_left   = $validated['spots_left'];
@@ -129,7 +130,7 @@ class ClassSessionController extends Controller
                 'trainer_id'   => $class->trainer_id,
                 'trainer_name' => $class->trainer_name,
                 'start_date'   => $class->date_iso,
-                'end_date'     => $class->date_iso,
+                'end_date'     => $class->end_date_iso ?? $class->date_iso,
                 'start_time'   => $startTime,
                 'end_time'     => $endTime,
                 'date_iso'     => $class->date_iso,
@@ -152,7 +153,7 @@ class ClassSessionController extends Controller
             'title'        => 'required|string',
             'trainer_name' => 'required|string',
             'start_date'   => 'required|date',
-            'end_date'     => 'required|date',
+            'end_date'     => 'required|date|after_or_equal:start_date',
             'start_time'   => 'required',
             'end_time'     => 'required',
             'modality'     => 'required|in:Online,Presencial',
@@ -162,7 +163,8 @@ class ClassSessionController extends Controller
         $class->title        = $validated['title'];
         $class->trainer_name = $validated['trainer_name'];
         $class->date_iso     = $validated['start_date'];
-        $class->time_range   = $validated['start_time'].' - '.$validated['end_time'];
+        $class->end_date_iso = $validated['end_date']; // 👈 TAMBIÉN AQUÍ
+        $class->time_range   = $validated['start_time'] . ' - ' . $validated['end_time'];
         $class->modality     = $validated['modality'];
         $class->level        = 'General';
         $class->spots_left   = $validated['spots_left'];
@@ -179,7 +181,7 @@ class ClassSessionController extends Controller
                 'trainer_id'   => $class->trainer_id,
                 'trainer_name' => $class->trainer_name,
                 'start_date'   => $class->date_iso,
-                'end_date'     => $class->date_iso,
+                'end_date'     => $class->end_date_iso ?? $class->date_iso,
                 'start_time'   => $startTime,
                 'end_time'     => $endTime,
                 'date_iso'     => $class->date_iso,
