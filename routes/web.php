@@ -135,6 +135,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::put('/api/admin/bookings/{id}/status', [BookingController::class, 'updateStatus'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
+    
+    Route::put('/admin/bookings/{id}/attendance', [BookingController::class, 'updateAttendance'])
+        ->withoutMiddleware([ValidateCsrfToken::class]);
 
     // 🔹 CLASES ADMIN: USANDO ClassSessionController
     Route::get('/api/admin/classes', [ClassSessionController::class, 'index']);
@@ -147,6 +150,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::delete('/api/admin/classes/{id}', [ClassSessionController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
+    
+
 });
 
 

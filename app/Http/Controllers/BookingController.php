@@ -29,18 +29,18 @@ class BookingController extends Controller
             // class_id es OPCIONAL
             'class_id' => 'nullable|integer',
 
-            'name'   => 'required|string|max:255',  // título de la clase
-            'email'  => 'required|email',
-            'notes'  => 'nullable|string',
+            'name' => 'required|string|max:255',  // título de la clase
+            'email' => 'required|email',
+            'notes' => 'nullable|string',
 
             'start_date' => 'required|date',
-            'end_date'   => 'required|date|after_or_equal:start_date',
+            'end_date' => 'required|date|after_or_equal:start_date',
 
-            'trainer_name'           => 'nullable|string|max:255',
-            'original_start_date'    => 'nullable|date',
-            'original_end_date'      => 'nullable|date',
+            'trainer_name' => 'nullable|string|max:255',
+            'original_start_date' => 'nullable|date',
+            'original_end_date' => 'nullable|date',
             'original_training_days' => 'nullable|integer|min:0',
-            'new_training_days'      => 'nullable|integer|min:0',
+            'new_training_days' => 'nullable|integer|min:0',
         ]);
 
         // siempre creamos en pending
@@ -59,7 +59,7 @@ class BookingController extends Controller
 
         if (!$class) {
             return response()->json([
-                'ok'      => false,
+                'ok' => false,
                 'message' => 'Class is not available anymore.',
             ], 422);
         }
@@ -72,7 +72,7 @@ class BookingController extends Controller
 
         if ($alreadyBooked) {
             return response()->json([
-                'ok'      => false,
+                'ok' => false,
                 'message' => 'You already have a reservation for this class.',
             ], 422);
         }
@@ -80,7 +80,7 @@ class BookingController extends Controller
         // 3) Validar cupos
         if ($class->spots_left <= 0) {
             return response()->json([
-                'ok'      => false,
+                'ok' => false,
                 'message' => 'We’re sorry! We’ve run out of available seats for this class.',
             ], 422);
         }
@@ -89,7 +89,7 @@ class BookingController extends Controller
         if (!empty($validated['class_id'])) {
             $bookingData = $validated;
         } else {
-            $bookingData           = $validated;
+            $bookingData = $validated;
             $bookingData['class_id'] = $class->id ?? null;
         }
 
@@ -103,11 +103,11 @@ class BookingController extends Controller
         try {
             Log::info('Intentando enviar correo de reserva via GoogleScriptMailer', [
                 'booking_id' => $booking->id,
-                'email'      => $booking->email,
+                'email' => $booking->email,
             ]);
 
             $html = View::make('emails.class_booked', [
-                'booking'      => $booking,
+                'booking' => $booking,
                 'classSession' => $class,
             ])->render();
 
@@ -127,12 +127,12 @@ class BookingController extends Controller
         } catch (\Throwable $e) {
             Log::error('Error enviando ClassBookedMail via GoogleScriptMailer', [
                 'booking_id' => $booking->id,
-                'error'      => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
 
         return response()->json([
-            'ok'      => true,
+            'ok' => true,
             'message' => 'Reserva creada correctamente',
             'booking' => $booking,
         ], 201);
@@ -146,7 +146,7 @@ class BookingController extends Controller
 
         if (!$user || !$user->is_admin) {
             return response()->json([
-                'ok'      => false,
+                'ok' => false,
                 'message' => 'No autorizado',
             ], 403);
         }
@@ -171,8 +171,8 @@ class BookingController extends Controller
         });
 
         return response()->json([
-            'ok'       => true,
-            'message'  => 'Listado de reservas',
+            'ok' => true,
+            'message' => 'Listado de reservas',
             'bookings' => $bookings,
         ]);
     }
@@ -185,7 +185,7 @@ class BookingController extends Controller
 
         if (!$booking) {
             return response()->json([
-                'ok'      => false,
+                'ok' => false,
                 'message' => 'Reserva no encontrada',
             ], 404);
         }
@@ -209,7 +209,7 @@ class BookingController extends Controller
         $booking->delete();
 
         return response()->json([
-            'ok'      => true,
+            'ok' => true,
             'message' => 'Reserva eliminada correctamente',
         ]);
     }
@@ -222,24 +222,24 @@ class BookingController extends Controller
 
         if (!$booking) {
             return response()->json([
-                'ok'      => false,
+                'ok' => false,
                 'message' => 'Reserva no encontrada',
             ], 404);
         }
 
         $validated = $request->validate([
-            'name'         => 'sometimes|required|string|max:255',
-            'email'        => 'sometimes|required|email',
-            'notes'        => 'nullable|string',
-            'start_date'   => 'sometimes|required|date',
-            'end_date'     => 'sometimes|required|date|after_or_equal:start_date',
+            'name' => 'sometimes|required|string|max:255',
+            'email' => 'sometimes|required|email',
+            'notes' => 'nullable|string',
+            'start_date' => 'sometimes|required|date',
+            'end_date' => 'sometimes|required|date|after_or_equal:start_date',
             'trainer_name' => 'nullable|string|max:255',
         ]);
 
         $booking->update($validated);
 
         return response()->json([
-            'ok'      => true,
+            'ok' => true,
             'message' => 'Reserva actualizada correctamente',
             'booking' => $booking,
         ]);
@@ -254,14 +254,14 @@ class BookingController extends Controller
         }
 
         $map = [
-            'Sergio Osorio'    => 'seosorio@alonsoalonsolaw.com',
-            'Monica Mendoza'   => 'mmendoza@alonsoalonsolaw.com',
-            'Kelvin Hodgson'   => 'kelvinh@alonsoalonsolaw.com',
-            'Edma Murillo'     => 'emurillo@alonsoalonsolaw.com',
-            'Dora Ramirez'     => 'dramirez@alonsoalonsolaw.com',
-            'Ada Perez'        => 'adaperez@alonsoalonsolaw.com',
-            'Josias Mendez'    => 'josias@alonsoalonsolaw.com',
-            'Ricardo Sanchez'  => 'risanchez@alonsoalonsolaw.com',
+            'Sergio Osorio' => 'seosorio@alonsoalonsolaw.com',
+            'Monica Mendoza' => 'mmendoza@alonsoalonsolaw.com',
+            'Kelvin Hodgson' => 'kelvinh@alonsoalonsolaw.com',
+            'Edma Murillo' => 'emurillo@alonsoalonsolaw.com',
+            'Dora Ramirez' => 'dramirez@alonsoalonsolaw.com',
+            'Ada Perez' => 'adaperez@alonsoalonsolaw.com',
+            'Josias Mendez' => 'josias@alonsoalonsolaw.com',
+            'Ricardo Sanchez' => 'risanchez@alonsoalonsolaw.com',
             'Giselle Cárdenas' => 'giscardenas@alonsoalonsolaw.com',
         ];
 
@@ -276,7 +276,7 @@ class BookingController extends Controller
             $booking = Booking::findOrFail($id);
 
             $validated = $request->validate([
-                'status'       => 'required|in:accepted,denied',
+                'status' => 'required|in:accepted,denied',
                 'calendar_url' => 'nullable|string|max:2048',
             ]);
 
@@ -312,12 +312,12 @@ class BookingController extends Controller
                 try {
                     Log::info('Intentando enviar correo de aceptación al participante via GoogleScriptMailer', [
                         'booking_id' => $booking->id,
-                        'email'      => $booking->email,
+                        'email' => $booking->email,
                     ]);
 
                     $htmlUser = View::make('emails.class_accepted', [
-                        'booking'     => $booking,
-                        'class'       => $class,
+                        'booking' => $booking,
+                        'class' => $class,
                         'calendarUrl' => $calendarUrl ?: $class->calendar_url,
                     ])->render();
 
@@ -337,7 +337,7 @@ class BookingController extends Controller
                 } catch (\Throwable $e) {
                     Log::error('Error enviando ClassAcceptedMail via GoogleScriptMailer', [
                         'booking_id' => $booking->id,
-                        'error'      => $e->getMessage(),
+                        'error' => $e->getMessage(),
                     ]);
                 }
 
@@ -348,13 +348,13 @@ class BookingController extends Controller
                     if ($trainerEmail) {
                         Log::info('Intentando enviar correo al trainer via GoogleScriptMailer', [
                             'booking_id' => $booking->id,
-                            'trainer'    => $class->trainer_name,
-                            'email'      => $trainerEmail,
+                            'trainer' => $class->trainer_name,
+                            'email' => $trainerEmail,
                         ]);
 
                         $htmlTrainer = View::make('emails.trainer_class_accepted', [
                             'booking' => $booking,
-                            'class'   => $class,
+                            'class' => $class,
                         ])->render();
 
                         $sentTrainer = GoogleScriptMailer::send(
@@ -368,14 +368,14 @@ class BookingController extends Controller
                         if (!$sentTrainer) {
                             Log::warning('GoogleScriptMailer::send devolvió false para trainer en updateStatus()', [
                                 'booking_id' => $booking->id,
-                                'trainer'    => $class->trainer_name,
+                                'trainer' => $class->trainer_name,
                             ]);
                         }
                     }
                 } catch (\Throwable $e) {
                     Log::error('Error enviando TrainerClassAcceptedMail via GoogleScriptMailer', [
                         'booking_id' => $booking->id,
-                        'error'      => $e->getMessage(),
+                        'error' => $e->getMessage(),
                     ]);
                 }
             }
@@ -388,7 +388,7 @@ class BookingController extends Controller
             }
 
             return response()->json([
-                'ok'      => true,
+                'ok' => true,
                 'message' => 'Booking Updated',
                 'booking' => $booking,
             ]);
@@ -396,13 +396,44 @@ class BookingController extends Controller
         } catch (\Throwable $e) {
             Log::error('Error en updateStatus', [
                 'booking_id' => $id,
-                'error'      => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
-                'ok'      => false,
+                'ok' => false,
                 'message' => 'Server error updating booking status.',
             ], 500);
         }
     }
+    public function updateAttendance(Request $request, string $id)
+    {
+        try {
+            $booking = Booking::findOrFail($id);
+
+            $validated = $request->validate([
+                'attendedbutton' => 'required|boolean',
+            ]);
+
+            $booking->attendedbutton = $validated['attendedbutton'];
+            $booking->save();
+
+            return response()->json([
+                'ok' => true,
+                'message' => 'Attendance updated',
+                'booking' => $booking,
+            ]);
+
+        } catch (\Throwable $e) {
+            Log::error('Error updating attendance', [
+                'booking_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'ok' => false,
+                'message' => 'Server error updating attendance.',
+            ], 500);
+        }
+    }
+
 }
