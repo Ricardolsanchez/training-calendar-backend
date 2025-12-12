@@ -4,7 +4,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Http\Request;
-
+use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\Admin\ClassSessionController;
 use App\Http\Controllers\Admin\AdminAuthController;
@@ -27,6 +27,11 @@ Route::get('/', function () {
 | UTILIDADES TEMPORALES (⚠️ BORRAR DESPUÉS)
 |--------------------------------------------------------------------------
 */
+
+Route::get('/api/health/db', function () {
+    DB::select('select 1');
+    return response()->json(['ok' => true]);
+});
 
 // 🔹 Reset config y cachés
 Route::get('/reset-config', function () {
@@ -85,9 +90,9 @@ Route::post('/api/admin/login', [AdminAuthController::class, 'login'])
 Route::middleware(['auth:sanctum'])->get('/api/user', function (Request $request) {
     $user = $request->user();
     return [
-        'id'       => $user->id,
-        'email'    => $user->email,
-        'name'     => $user->name,
+        'id' => $user->id,
+        'email' => $user->email,
+        'name' => $user->name,
         'is_admin' => (bool) ($user->is_admin ?? false),
     ];
 });
@@ -98,7 +103,7 @@ Route::middleware(['auth:sanctum'])->post('/api/logout', function (Request $requ
     $request->session()->regenerateToken();
 
     return response()->json([
-        'ok'      => true,
+        'ok' => true,
         'message' => 'Logged out',
     ]);
 });
@@ -127,7 +132,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // RESERVAS
     Route::get('/api/admin/bookings', [BookingController::class, 'index']);
 
-    Route::put('/api/admin/bookings/{id}', [BookingController::class, 'update'])
+    Route::put('/api/admin/bookings/{id}/attendance', [BookingController::class, 'updateAttendance'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
     Route::delete('/api/admin/bookings/{id}', [BookingController::class, 'destroy'])
@@ -135,7 +140,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::put('/api/admin/bookings/{id}/status', [BookingController::class, 'updateStatus'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
-    
+
     Route::put('/admin/bookings/{id}/attendance', [BookingController::class, 'updateAttendance'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
@@ -150,7 +155,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::delete('/api/admin/classes/{id}', [ClassSessionController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
-    
+
 
 });
 
