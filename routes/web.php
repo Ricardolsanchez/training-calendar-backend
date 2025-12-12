@@ -1,15 +1,16 @@
 <?php
 
-use App\Http\Controllers\Admin\AdminStatsController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\Admin\ClassSessionController;
 use App\Http\Controllers\Admin\AdminAuthController;
-use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use App\Http\Controllers\Admin\AdminStatsController;
 
 use App\Services\GoogleScriptMailer;
 
@@ -23,18 +24,17 @@ Route::get('/', function () {
     return ['Laravel' => app()->version()];
 });
 
-/*
-|--------------------------------------------------------------------------
-| UTILIDADES TEMPORALES (⚠️ BORRAR DESPUÉS)
-|--------------------------------------------------------------------------
-*/
-
 Route::get('/api/health/db', function () {
     DB::select('select 1');
     return response()->json(['ok' => true]);
 });
 
-// 🔹 Reset config y cachés
+/*
+|---------------------------------------------------------------------------
+| UTILIDADES TEMPORALES (⚠️ BORRAR DESPUÉS)
+|---------------------------------------------------------------------------
+*/
+
 Route::get('/reset-config', function () {
     Artisan::call('config:clear');
     Artisan::call('cache:clear');
@@ -42,7 +42,6 @@ Route::get('/reset-config', function () {
     return '✔️ Config cleared';
 });
 
-// 🔹 Ejecutar migraciones en producción (TEMPORAL)
 Route::get('/run-migrate', function () {
     try {
         Artisan::call('migrate', ['--force' => true]);
@@ -52,7 +51,6 @@ Route::get('/run-migrate', function () {
     }
 });
 
-// 🔹 Ejecutar seeder de admin (TEMPORAL)
 Route::get('/run-admin-seeder', function () {
     try {
         Artisan::call('db:seed', [
@@ -65,7 +63,6 @@ Route::get('/run-admin-seeder', function () {
     }
 });
 
-// 🔹 Test rápido del Google Script Mailer (opcional)
 Route::get('/test-google-mail', function () {
     $ok = GoogleScriptMailer::send(
         'risanchez@alonsoalonsolaw.com',
@@ -78,11 +75,10 @@ Route::get('/test-google-mail', function () {
     return $ok ? 'Correo enviado ✅' : 'Fallo el envío ❌ (revisa logs)';
 });
 
-
 /*
-|--------------------------------------------------------------------------
+|---------------------------------------------------------------------------
 | AUTH ADMIN (API)
-|--------------------------------------------------------------------------
+|---------------------------------------------------------------------------
 */
 
 Route::post('/api/admin/login', [AdminAuthController::class, 'login'])
@@ -90,6 +86,7 @@ Route::post('/api/admin/login', [AdminAuthController::class, 'login'])
 
 Route::middleware(['auth:sanctum'])->get('/api/user', function (Request $request) {
     $user = $request->user();
+
     return [
         'id' => $user->id,
         'email' => $user->email,
@@ -109,45 +106,40 @@ Route::middleware(['auth:sanctum'])->post('/api/logout', function (Request $requ
     ]);
 });
 
-
 /*
-|--------------------------------------------------------------------------
+|---------------------------------------------------------------------------
 | API PÚBLICA (FORMULARIO + CALENDARIO)
-|--------------------------------------------------------------------------
+|---------------------------------------------------------------------------
 */
 
 Route::post('/api/bookings', [BookingController::class, 'store'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
 
-// Clases para el calendario público
 Route::get('/api/classes', [ClassSessionController::class, 'indexPublic']);
 
-
 /*
-|--------------------------------------------------------------------------
+|---------------------------------------------------------------------------
 | ADMIN API PROTEGIDA
-|--------------------------------------------------------------------------
+|---------------------------------------------------------------------------
 */
 Route::middleware(['auth:sanctum'])->group(function () {
 
-    // RESERVAS
+    // ===== RESERVAS =====
     Route::get('/api/admin/bookings', [BookingController::class, 'index']);
 
     Route::put('/api/admin/bookings/{id}/attendance', [BookingController::class, 'updateAttendance'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
-    Route::delete('/api/admin/bookings/{id}', [BookingController::class, 'destroy'])
-        ->withoutMiddleware([ValidateCsrfToken::class]);
-
     Route::put('/api/admin/bookings/{id}/status', [BookingController::class, 'updateStatus'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
-    Route::put('/admin/bookings/{id}/attendance', [BookingController::class, 'updateAttendance'])
+    Route::delete('/api/admin/bookings/{id}', [BookingController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
-    Route::get('/admin/stats/kpis', [AdminStatsController::class, 'kpis']);
+    // ===== STATS / KPIS =====
+    Route::get('/api/admin/stats/kpis', [AdminStatsController::class, 'kpis']);
 
-    // 🔹 CLASES ADMIN: USANDO ClassSessionController
+    // ===== CLASES ADMIN =====
     Route::get('/api/admin/classes', [ClassSessionController::class, 'index']);
 
     Route::post('/api/admin/classes', [ClassSessionController::class, 'store'])
@@ -158,15 +150,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::delete('/api/admin/classes/{id}', [ClassSessionController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
-
-
 });
 
-
 /*
-|--------------------------------------------------------------------------
+|---------------------------------------------------------------------------
 | AUTH BREEZE
-|--------------------------------------------------------------------------
+|---------------------------------------------------------------------------
 */
 
 require __DIR__ . '/auth.php';

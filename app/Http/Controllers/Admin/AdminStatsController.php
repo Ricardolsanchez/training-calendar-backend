@@ -12,25 +12,25 @@ use Illuminate\Support\Facades\DB;
 class AdminStatsController extends Controller
 {
     /**
-     * GET /api/admin/stats
+     * GET /admin/stats/kpis
      * Returns KPIs + chart-ready datasets.
      *
      * Optional query params:
      * - from=YYYY-MM-DD
      * - to=YYYY-MM-DD
      */
-    public function index(Request $request)
+    public function kpis(Request $request)
     {
         try {
             $from = $request->query('from');
             $to   = $request->query('to');
 
-            // Base queries
             $bookingsQ = Booking::query();
             $classesQ  = ClassSession::query();
 
             // Optional date range filter:
-            // We filter bookings by created_at; and classes by start_date.
+            // bookings: by created_at
+            // classes:  by start_date
             if ($from) {
                 $bookingsQ->whereDate('created_at', '>=', $from);
                 $classesQ->whereDate('start_date', '>=', $from);
@@ -40,30 +40,28 @@ class AdminStatsController extends Controller
                 $classesQ->whereDate('start_date', '<=', $to);
             }
 
-            // KPIs (global)
+            // KPIs
             $totalBookings = (clone $bookingsQ)->count();
 
-            // attendance counts only for accepted bookings (you can remove this filter if you want)
+            // Only accepted bookings
             $acceptedQ = (clone $bookingsQ)->where('status', 'accepted');
+            $acceptedTotal = (clone $acceptedQ)->count();
 
-            $attendedCount = (clone $acceptedQ)->where('attendedbutton', true)->count();
+            $attendedCount    = (clone $acceptedQ)->where('attendedbutton', true)->count();
             $notAttendedCount = (clone $acceptedQ)->where('attendedbutton', false)->count();
-            $notMarkedCount = (clone $acceptedQ)->whereNull('attendedbutton')->count();
+            $notMarkedCount   = (clone $acceptedQ)->whereNull('attendedbutton')->count();
 
             $totalClassesCreated = (clone $classesQ)->count();
-
-            // Total attended overall (same as attendedCount, but kept separate for clarity)
             $totalAttendedOverall = $attendedCount;
 
-            // Pie chart (attended vs not attended vs not marked)
+            // Pie chart
             $pie = [
                 ['label' => 'Attended', 'value' => $attendedCount],
                 ['label' => 'Not Attended', 'value' => $notAttendedCount],
                 ['label' => 'Not Marked', 'value' => $notMarkedCount],
             ];
 
-            // Line chart: attended per day (by booking.created_at)
-            // Postgres-friendly with DATE(created_at)
+            // Line chart by day (Postgres DATE())
             $lineRows = (clone $acceptedQ)
                 ->selectRaw("DATE(created_at) as day")
                 ->selectRaw("SUM(CASE WHEN attendedbutton = true THEN 1 ELSE 0 END) as attended")
@@ -81,7 +79,6 @@ class AdminStatsController extends Controller
             ])->values();
 
             // Requests per class (grouped)
-            // Matching the logic you use in frontend: booking.name == class title, booking.start_date == class start_date
             $perClassRows = (clone $acceptedQ)
                 ->select([
                     'name as class_title',
@@ -113,7 +110,7 @@ class AdminStatsController extends Controller
                 'kpis' => [
                     'total_bookings' => $totalBookings,
                     'total_classes_created' => $totalClassesCreated,
-                    'accepted_total' => (clone $acceptedQ)->count(),
+                    'accepted_total' => $acceptedTotal,
                     'attended_total' => $attendedCount,
                     'not_attended_total' => $notAttendedCount,
                     'not_marked_total' => $notMarkedCount,
