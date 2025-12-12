@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AdminStatsController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Artisan;
@@ -143,6 +144,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::put('/admin/bookings/{id}/attendance', [BookingController::class, 'updateAttendance'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
+
+    Route::get('/admin/stats/kpis', [AdminStatsController::class, 'kpis']);
 
     // 🔹 CLASES ADMIN: USANDO ClassSessionController
     Route::get('/api/admin/classes', [ClassSessionController::class, 'index']);

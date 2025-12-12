@@ -405,7 +405,7 @@ class BookingController extends Controller
             ], 500);
         }
     }
-    public function updateAttendance(Request $request, string $id)
+    public function updateAttendance(Request $request, int $id)
     {
         try {
             $booking = Booking::findOrFail($id);
