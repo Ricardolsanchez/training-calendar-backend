@@ -137,7 +137,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
     // ===== STATS / KPIS =====
-    Route::get('/api/admin/stats/kpis', [AdminStatsController::class, 'kpis']);
+    Route::get('/api/admin/stats/kpis', [AdminStatsController::class, 'index']);
 
     // ===== CLASES ADMIN =====
     Route::get('/api/admin/classes', [ClassSessionController::class, 'index']);
