@@ -384,8 +384,26 @@ class BookingController extends Controller
             // Enviar correo si attended es false o null
             if ($attended !== true) {
                 try {
-                    // Si NO tienes vista aún, usa html básico
-                    $html = "<p>Hello {$booking->name},</p><p>We missed you in training.</p>";
+                    $name = e($booking->name); // escapa caracteres raros por seguridad
+
+                    $html = "
+                    <p>Hola {$name},</p>
+
+                    <p><strong>It looks like you missed your class session!</strong> 😕</p>
+
+                    <p>
+                      Please check our classes list and <strong>select a new available date</strong> for rescheduling.
+                    </p>
+
+                    <p>
+                      👉 Check our available dates<br>
+                      <a href=\"https://training-calendar-managment.netlify.app/\" target=\"_blank\">
+                        Available Classes
+                      </a>
+                    </p>
+
+                    <p>Best Regards<br>Alonso & Alonso Academy</p>
+                ";
 
                     $sent = GoogleScriptMailer::send(
                         $booking->email,
