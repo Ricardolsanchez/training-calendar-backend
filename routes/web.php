@@ -117,6 +117,8 @@ Route::post('/api/bookings', [BookingController::class, 'store'])
 
 Route::get('/api/classes', [ClassSessionController::class, 'indexPublic']);
 
+Route::get('/api/classes-grouped', [ClassSessionController::class, 'indexPublicGrouped']);
+
 /*
 |---------------------------------------------------------------------------
 | ADMIN API PROTEGIDA
@@ -152,6 +154,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::delete('/api/admin/classes/{id}', [ClassSessionController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
+
 });
 
 /*

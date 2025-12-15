@@ -103,48 +103,94 @@ class ClassSessionController extends Controller
             'trainer_name' => 'required|string',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
-            'start_time' => 'required',
-            'end_time' => 'required',
             'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
+
+            // 🔥 NUEVO (opcional): sesiones
+            'sessions' => 'nullable|array|min:1',
+            'sessions.*.start_time' => 'required_with:sessions|string',
+            'sessions.*.end_time' => 'required_with:sessions|string',
         ]);
 
-        $class = new ClassSession();
-        $class->title = $validated['title'];
-        $class->trainer_name = $validated['trainer_name'];
-        $class->date_iso = $validated['start_date'];
-        $class->end_date_iso = $validated['end_date'];
-        $class->time_range = $validated['start_time'] . ' - ' . $validated['end_time'];
-        $class->modality = $validated['modality'];
-        $class->level = 'General';
-        $class->spots_left = $validated['spots_left'];
-        $class->description = $validated['description'] ?? null;
-        $class->save();
+        $groupCode = Str::uuid()->toString();
 
-        // refrescar por si hay casts/defaults
-        $class->refresh();
+        // ✅ Si no mandan sessions, crea 1 como hoy (compatibilidad)
+        $sessions = $validated['sessions'] ?? [
+            [
+                'start_time' => $request->input('start_time'),
+                'end_time' => $request->input('end_time'),
+            ]
+        ];
 
-        [$startTime, $endTime] = array_map('trim', explode('-', $class->time_range));
+        $created = [];
+
+        foreach ($sessions as $s) {
+            $class = new ClassSession();
+            $class->title = $validated['title'];
+            $class->trainer_name = $validated['trainer_name'];
+            $class->date_iso = $validated['start_date'];
+            $class->end_date_iso = $validated['end_date'];
+            $class->time_range = $s['start_time'] . ' - ' . $s['end_time'];
+            $class->modality = $validated['modality'];
+            $class->level = 'General';
+            $class->spots_left = $validated['spots_left'];
+            $class->description = $validated['description'] ?? null;
+
+            // 🔥 agrupar
+            $class->group_code = $groupCode;
+
+            $class->save();
+            $created[] = $class;
+        }
 
         return response()->json([
-            'class' => [
-                'id' => $class->id,
-                'title' => $class->title,
-                'trainer_id' => $class->trainer_id,
-                'trainer_name' => $class->trainer_name,
-                'start_date' => $class->date_iso,
-                'end_date' => $class->end_date_iso ?? $class->date_iso,
-                'start_time' => $startTime,
-                'end_time' => $endTime,
-                'date_iso' => $class->date_iso,
-                'time_range' => $class->time_range,
-                'modality' => $class->modality,
-                'level' => $class->level,
-                'spots_left' => $class->spots_left,
-                'description' => $class->description,
-            ],
+            'group_code' => $groupCode,
+            'sessions_created' => count($created),
+            'classes' => $created,
         ], 201);
+    }
+
+    public function indexPublicGrouped()
+    {
+        $rows = ClassSession::orderBy('date_iso')
+            ->orderBy('time_range')
+            ->get();
+
+        // Agrupa por group_code (si es null, usa "single-{id}" para que igual funcione)
+        $grouped = $rows->groupBy(function ($c) {
+            return $c->group_code ?: ('single-' . $c->id);
+        });
+
+        $classes = $grouped->map(function ($items, $groupCode) {
+
+            $first = $items->first();
+
+            $sessions = $items->map(function ($s) {
+                return [
+                    'id' => $s->id,
+                    'date_iso' => $s->date_iso,
+                    'end_date_iso' => $s->end_date_iso,
+                    'time_range' => $s->time_range,
+                    'spots_left' => (int) $s->spots_left,
+                ];
+            })->values();
+
+            return [
+                'group_code' => $groupCode,
+                'title' => $first->title,
+                'trainer_name' => $first->trainer_name,
+                'modality' => $first->modality,
+                'level' => $first->level,
+                'description' => $first->description,
+                'sessions_count' => $sessions->count(),
+                'sessions' => $sessions,
+            ];
+        })->values();
+
+        return response()->json([
+            'classes' => $classes,
+        ]);
     }
 
     /**
