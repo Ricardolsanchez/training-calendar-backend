@@ -227,7 +227,8 @@ class BookingController extends Controller
 
     private function getTrainerEmail(?string $trainerName): ?string
     {
-        if (!$trainerName) return null;
+        if (!$trainerName)
+            return null;
 
         $map = [
             'Sergio Osorio' => 'seosorio@alonsoalonsolaw.com',
@@ -360,16 +361,52 @@ class BookingController extends Controller
         try {
             $booking = Booking::findOrFail($id);
 
+            // Acepta cualquiera de los dos para no romper tu front actual
             $validated = $request->validate([
-                'attended' => 'nullable|boolean',
+                'attended' => 'nullable',
+                'attendedbutton' => 'nullable',
             ]);
 
-            $booking->attended = $validated['attended'] ?? null;
+            // Normaliza a boolean/null aunque llegue string
+            $raw = array_key_exists('attended', $validated)
+                ? $validated['attended']
+                : ($validated['attendedbutton'] ?? null);
+
+            $attended = is_null($raw)
+                ? null
+                : filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+            // Guarda en ambas columnas (así tu tabla queda consistente)
+            $booking->attended = $attended;
+            $booking->attendedbutton = $attended;
             $booking->save();
 
             // Enviar correo si attended es false o null
-            if ($booking->attended !== true) {
-                Mail::to($booking->email)->send(new TrainingMissedMail($booking));
+            if ($attended !== true) {
+                try {
+                    // Si NO tienes vista aún, usa html básico
+                    $html = "<p>Hello {$booking->name},</p><p>We missed you in training.</p>";
+
+                    $sent = GoogleScriptMailer::send(
+                        $booking->email,
+                        $booking->name,
+                        'We missed you in training',
+                        $html,
+                        'We missed you in training'
+                    );
+
+                    if (!$sent) {
+                        Log::warning('GoogleScriptMailer::send devolvió false en updateAttendance()', [
+                            'booking_id' => $booking->id,
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    // NO tumbes el endpoint por el correo
+                    Log::error('Error enviando mail via GoogleScriptMailer (updateAttendance)', [
+                        'booking_id' => $booking->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
             return response()->json([
