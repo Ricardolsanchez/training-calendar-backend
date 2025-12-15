@@ -8,6 +8,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\View;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\TrainingMissedMail;
 use App\Services\GoogleScriptMailer;
 
 class BookingController extends Controller
@@ -416,6 +418,10 @@ class BookingController extends Controller
 
             $booking->attendedbutton = $validated['attendedbutton'];
             $booking->save();
+
+            if ($booking->attendedbutton === false) {
+                Mail::to($booking->email)->send(new TrainingMissedMail($booking));
+            }
 
             return response()->json([
                 'ok' => true,
