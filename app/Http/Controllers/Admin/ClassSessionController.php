@@ -258,4 +258,46 @@ class ClassSessionController extends Controller
 
         return response()->json(['deleted' => true]);
     }
+
+    public function addSessions(Request $request, $id)
+    {
+        $base = ClassSession::findOrFail($id);
+
+        $validated = $request->validate([
+            'sessions' => 'required|array|min:1',
+            'sessions.*.start_time' => 'required|string',
+            'sessions.*.end_time' => 'required|string',
+        ]);
+
+        // Asegurar que la clase base tenga group_code
+        if (!$base->group_code) {
+            $base->group_code = (string) Str::uuid();
+            $base->save();
+        }
+
+        $created = [];
+
+        foreach ($validated['sessions'] as $s) {
+            $new = new ClassSession();
+            $new->title = $base->title;
+            $new->trainer_name = $base->trainer_name;
+            $new->date_iso = $base->date_iso;              // misma fecha (si quieres, luego lo hacemos editable)
+            $new->end_date_iso = $base->end_date_iso;
+            $new->time_range = $s['start_time'] . ' - ' . $s['end_time'];
+            $new->modality = $base->modality;
+            $new->level = $base->level;
+            $new->spots_left = $base->spots_left;
+            $new->description = $base->description;
+            $new->group_code = $base->group_code;
+            $new->save();
+
+            $created[] = $new;
+        }
+
+        return response()->json([
+            'ok' => true,
+            'group_code' => $base->group_code,
+            'created' => $created,
+        ], 201);
+    }
 }
