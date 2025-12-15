@@ -8,6 +8,8 @@ use App\Models\ClassSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+
 
 class AdminStatsController extends Controller
 {
@@ -23,10 +25,10 @@ class AdminStatsController extends Controller
     {
         try {
             $from = $request->query('from');
-            $to   = $request->query('to');
+            $to = $request->query('to');
 
             $bookingsQ = Booking::query();
-            $classesQ  = ClassSession::query();
+            $classesQ = ClassSession::query();
 
             // Optional date range filter:
             // bookings: by created_at
@@ -47,9 +49,9 @@ class AdminStatsController extends Controller
             $acceptedQ = (clone $bookingsQ)->where('status', 'accepted');
             $acceptedTotal = (clone $acceptedQ)->count();
 
-            $attendedCount    = (clone $acceptedQ)->where('attendedbutton', true)->count();
+            $attendedCount = (clone $acceptedQ)->where('attendedbutton', true)->count();
             $notAttendedCount = (clone $acceptedQ)->where('attendedbutton', false)->count();
-            $notMarkedCount   = (clone $acceptedQ)->whereNull('attendedbutton')->count();
+            $notMarkedCount = (clone $acceptedQ)->whereNull('attendedbutton')->count();
 
             $totalClassesCreated = (clone $classesQ)->count();
             $totalAttendedOverall = $attendedCount;
@@ -71,7 +73,7 @@ class AdminStatsController extends Controller
                 ->orderBy(DB::raw("DATE(created_at)"), 'asc')
                 ->get();
 
-            $line = $lineRows->map(fn ($r) => [
+            $line = $lineRows->map(fn($r) => [
                 'day' => $r->day,
                 'attended' => (int) $r->attended,
                 'not_attended' => (int) $r->not_attended,
@@ -94,7 +96,7 @@ class AdminStatsController extends Controller
                 ->orderBy('start_date', 'asc')
                 ->get();
 
-            $perClass = $perClassRows->map(fn ($r) => [
+            $perClass = $perClassRows->map(fn($r) => [
                 'classTitle' => $r->class_title,
                 'start_date' => $r->start_date,
                 'end_date' => $r->end_date,
@@ -136,5 +138,54 @@ class AdminStatsController extends Controller
                 'message' => 'Server error building stats.',
             ], 500);
         }
+    }
+    public function exportKpisCsv(Request $request): StreamedResponse
+    {
+        // Reutiliza la MISMA lógica llamando a kpis() y usando su data
+        $jsonResponse = $this->kpis($request);
+
+        $payload = $jsonResponse->getData(true);
+
+        // Si hubo error, evita descargar un CSV vacío
+        if (!($payload['ok'] ?? false)) {
+            return response()->stream(function () {
+                $out = fopen('php://output', 'w');
+                fputcsv($out, ['error', 'Could not build KPIs']);
+                fclose($out);
+            }, 500, [
+                'Content-Type' => 'text/csv; charset=UTF-8',
+                'Content-Disposition' => 'attachment; filename="kpis_error.csv"',
+            ]);
+        }
+
+        $kpis = $payload['kpis'] ?? [];
+        $from = $payload['filters']['from'] ?? '';
+        $to = $payload['filters']['to'] ?? '';
+
+        $filename = 'kpis_' . now()->format('Y-m-d_H-i-s') . '.csv';
+
+        return response()->stream(function () use ($kpis, $from, $to) {
+            $out = fopen('php://output', 'w');
+
+            // BOM para Excel
+            fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+            // (Opcional) filtros
+            fputcsv($out, ['from', $from]);
+            fputcsv($out, ['to', $to]);
+            fputcsv($out, []); // línea en blanco
+
+            // KPIs
+            fputcsv($out, ['metric', 'value']);
+            foreach ($kpis as $metric => $value) {
+                fputcsv($out, [$metric, $value]);
+            }
+
+            fclose($out);
+        }, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+            'Cache-Control' => 'no-store, no-cache',
+        ]);
     }
 }

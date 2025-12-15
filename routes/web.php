@@ -139,6 +139,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // ===== STATS / KPIS =====
     Route::get('/api/admin/stats/kpis', [AdminStatsController::class, 'kpis']);
     Route::get('/admin/stats/kpis', [AdminStatsController::class, 'kpis']); // alias por si el FE llama /admin/...
+    Route::get('/api/admin/stats/kpis.csv', [AdminStatsController::class, 'exportKpisCsv']);
 
     // ===== CLASES ADMIN =====
     Route::get('/api/admin/classes', [ClassSessionController::class, 'index']);
