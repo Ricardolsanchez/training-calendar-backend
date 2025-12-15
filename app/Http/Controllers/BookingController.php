@@ -18,7 +18,6 @@ class BookingController extends Controller
 
     public function store(Request $request)
     {
-        // Logs para verificar config del mailer (puedes dejarlos o quitarlos luego)
         Log::info('GOOGLE URL ES:', [
             'url' => config('services.google_script_mailer.url'),
         ]);
@@ -28,16 +27,12 @@ class BookingController extends Controller
         ]);
 
         $validated = $request->validate([
-            // class_id es OPCIONAL
             'class_id' => 'nullable|integer',
-
-            'name' => 'required|string|max:255',  // título de la clase
+            'name' => 'required|string|max:255',
             'email' => 'required|email',
             'notes' => 'nullable|string',
-
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
-
             'trainer_name' => 'nullable|string|max:255',
             'original_start_date' => 'nullable|date',
             'original_end_date' => 'nullable|date',
@@ -45,15 +40,11 @@ class BookingController extends Controller
             'new_training_days' => 'nullable|integer|min:0',
         ]);
 
-        // siempre creamos en pending
         $validated['status'] = 'pending';
 
-        // 1) Buscar la clase asociada
         if (!empty($validated['class_id'])) {
-            // a) preferimos class_id si viene
             $class = ClassSession::find($validated['class_id']);
         } else {
-            // b) fallback: por título + fecha (como venías manejando)
             $class = ClassSession::where('title', $validated['name'])
                 ->where('date_iso', $validated['start_date'])
                 ->first();
@@ -66,7 +57,6 @@ class BookingController extends Controller
             ], 422);
         }
 
-        // 2) Verificar que este correo NO tenga ya una reserva para esta clase
         $alreadyBooked = Booking::where('email', $validated['email'])
             ->where('name', $validated['name'])
             ->where('start_date', $validated['start_date'])
@@ -79,7 +69,6 @@ class BookingController extends Controller
             ], 422);
         }
 
-        // 3) Validar cupos
         if ($class->spots_left <= 0) {
             return response()->json([
                 'ok' => false,
@@ -87,21 +76,14 @@ class BookingController extends Controller
             ], 422);
         }
 
-        // 4) Crear la reserva (si tienes columna class_id en bookings, la usamos)
-        if (!empty($validated['class_id'])) {
-            $bookingData = $validated;
-        } else {
-            $bookingData = $validated;
-            $bookingData['class_id'] = $class->id ?? null;
-        }
+        $bookingData = $validated;
+        $bookingData['class_id'] = $validated['class_id'] ?? ($class->id ?? null);
 
         $booking = Booking::create($bookingData);
 
-        // 5) Descontar un cupo
         $class->spots_left = $class->spots_left - 1;
         $class->save();
 
-        // 6) Enviar correo de confirmación usando GoogleScriptMailer (HTTP API)
         try {
             Log::info('Intentando enviar correo de reserva via GoogleScriptMailer', [
                 'booking_id' => $booking->id,
@@ -155,10 +137,7 @@ class BookingController extends Controller
 
         $bookings = Booking::orderBy('created_at', 'desc')->get();
 
-        // Adjuntar calendar_url de la clase a cada booking
         $bookings = $bookings->map(function (Booking $b) {
-            $class = null;
-
             if (!empty($b->class_id)) {
                 $class = ClassSession::find($b->class_id);
             } else {
@@ -192,9 +171,6 @@ class BookingController extends Controller
             ], 404);
         }
 
-        // Liberar cupo en la clase (si existe)
-        $class = null;
-
         if (!empty($booking->class_id)) {
             $class = ClassSession::find($booking->class_id);
         } else {
@@ -203,7 +179,7 @@ class BookingController extends Controller
                 ->first();
         }
 
-        if ($class) {
+        if (!empty($class)) {
             $class->spots_left = $class->spots_left + 1;
             $class->save();
         }
@@ -251,9 +227,7 @@ class BookingController extends Controller
 
     private function getTrainerEmail(?string $trainerName): ?string
     {
-        if (!$trainerName) {
-            return null;
-        }
+        if (!$trainerName) return null;
 
         $map = [
             'Sergio Osorio' => 'seosorio@alonsoalonsolaw.com',
@@ -282,11 +256,9 @@ class BookingController extends Controller
                 'calendar_url' => 'nullable|string|max:2048',
             ]);
 
-            // 1) Actualizar estado de la reserva
             $booking->status = $validated['status'];
             $booking->save();
 
-            // 2) Clase asociada (por class_id o por título+fecha)
             if (!empty($booking->class_id)) {
                 $class = ClassSession::find($booking->class_id);
             } else {
@@ -297,7 +269,6 @@ class BookingController extends Controller
 
             $calendarUrl = $validated['calendar_url'] ?? null;
 
-            // 3) Guardar calendar_url SOLO si la columna existe en la tabla
             if ($class && $calendarUrl && Schema::hasColumn('class_sessions', 'calendar_url')) {
                 $class->calendar_url = $calendarUrl;
                 $class->save();
@@ -307,35 +278,23 @@ class BookingController extends Controller
                 ]);
             }
 
-            // 4) Enviar correos si se aceptó
             if ($booking->status === 'accepted' && $class) {
 
-                // 4.1 Correo al participante
+                // participante
                 try {
-                    Log::info('Intentando enviar correo de aceptación al participante via GoogleScriptMailer', [
-                        'booking_id' => $booking->id,
-                        'email' => $booking->email,
-                    ]);
-
                     $htmlUser = View::make('emails.class_accepted', [
                         'booking' => $booking,
                         'class' => $class,
                         'calendarUrl' => $calendarUrl ?: $class->calendar_url,
                     ])->render();
 
-                    $sentUser = GoogleScriptMailer::send(
+                    GoogleScriptMailer::send(
                         $booking->email,
                         $booking->name,
                         '✅ Your class has been confirmed',
                         $htmlUser,
                         'Your class has been confirmed.'
                     );
-
-                    if (!$sentUser) {
-                        Log::warning('GoogleScriptMailer::send devolvió false para participante en updateStatus()', [
-                            'booking_id' => $booking->id,
-                        ]);
-                    }
                 } catch (\Throwable $e) {
                     Log::error('Error enviando ClassAcceptedMail via GoogleScriptMailer', [
                         'booking_id' => $booking->id,
@@ -343,36 +302,23 @@ class BookingController extends Controller
                     ]);
                 }
 
-                // 4.2 Correo al trainer
+                // trainer
                 try {
                     $trainerEmail = $this->getTrainerEmail($class->trainer_name);
 
                     if ($trainerEmail) {
-                        Log::info('Intentando enviar correo al trainer via GoogleScriptMailer', [
-                            'booking_id' => $booking->id,
-                            'trainer' => $class->trainer_name,
-                            'email' => $trainerEmail,
-                        ]);
-
                         $htmlTrainer = View::make('emails.trainer_class_accepted', [
                             'booking' => $booking,
                             'class' => $class,
                         ])->render();
 
-                        $sentTrainer = GoogleScriptMailer::send(
+                        GoogleScriptMailer::send(
                             $trainerEmail,
                             $class->trainer_name ?? 'Trainer',
                             'New training session assigned',
                             $htmlTrainer,
                             'New training session assigned.'
                         );
-
-                        if (!$sentTrainer) {
-                            Log::warning('GoogleScriptMailer::send devolvió false para trainer en updateStatus()', [
-                                'booking_id' => $booking->id,
-                                'trainer' => $class->trainer_name,
-                            ]);
-                        }
                     }
                 } catch (\Throwable $e) {
                     Log::error('Error enviando TrainerClassAcceptedMail via GoogleScriptMailer', [
@@ -382,7 +328,6 @@ class BookingController extends Controller
                 }
             }
 
-            // 5) Incluir calendar_url en la respuesta para que el front actualice la tabla
             if (isset($class) && $class && Schema::hasColumn('class_sessions', 'calendar_url')) {
                 $booking->setAttribute('calendar_url', $class->calendar_url);
             } else {
@@ -407,19 +352,23 @@ class BookingController extends Controller
             ], 500);
         }
     }
+
+    // ==================== ADMIN: ASISTENCIA (TRUE / FALSE / NULL) ====================
+
     public function updateAttendance(Request $request, int $id)
     {
         try {
             $booking = Booking::findOrFail($id);
 
             $validated = $request->validate([
-                'attendedbutton' => 'required|boolean',
+                'attended' => 'nullable|boolean',
             ]);
 
-            $booking->attendedbutton = $validated['attendedbutton'];
+            $booking->attended = $validated['attended'] ?? null;
             $booking->save();
 
-            if ($booking->attendedbutton === false) {
+            // Enviar correo si attended es false o null
+            if ($booking->attended !== true) {
                 Mail::to($booking->email)->send(new TrainingMissedMail($booking));
             }
 
@@ -441,5 +390,4 @@ class BookingController extends Controller
             ], 500);
         }
     }
-
 }
