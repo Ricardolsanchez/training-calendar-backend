@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\ClassSession;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str; // ✅ IMPORTANTE
 
 class ClassSessionController extends Controller
 {
@@ -31,7 +32,6 @@ class ClassSessionController extends Controller
                 return [
                     'id' => $cls->id,
                     'title' => $cls->title,
-                    'trainer_id' => $cls->trainer_id,
                     'trainer_name' => $cls->trainer_name,
 
                     'start_date' => $startDate,
@@ -40,12 +40,15 @@ class ClassSessionController extends Controller
                     'end_time' => $endTime,
 
                     'date_iso' => $cls->date_iso,
+                    'end_date_iso' => $cls->end_date_iso,
                     'time_range' => $cls->time_range,
 
                     'modality' => $cls->modality,
                     'level' => $cls->level,
                     'spots_left' => $cls->spots_left,
                     'description' => $cls->description,
+
+                    'group_code' => $cls->group_code ?? null,
                 ];
             }),
         ]);
@@ -88,6 +91,8 @@ class ClassSessionController extends Controller
                     'level' => $cls->level,
                     'spots_left' => $cls->spots_left,
                     'description' => $cls->description,
+
+                    'group_code' => $cls->group_code ?? null,
                 ];
             }),
         ]);
@@ -95,6 +100,7 @@ class ClassSessionController extends Controller
 
     /**
      * CREAR CLASE (ADMIN – POST /api/admin/classes)
+     * Mantiene compatibilidad con tu front: requiere start_time y end_time.
      */
     public function store(Request $request)
     {
@@ -103,61 +109,41 @@ class ClassSessionController extends Controller
             'trainer_name' => 'required|string',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
+            'start_time' => 'required',
+            'end_time' => 'required',
             'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
-
-            // 🔥 NUEVO (opcional): sesiones
-            'sessions' => 'nullable|array|min:1',
-            'sessions.*.start_time' => 'required_with:sessions|string',
-            'sessions.*.end_time' => 'required_with:sessions|string',
         ]);
 
-        $groupCode = Str::uuid()->toString();
+        $class = new ClassSession();
+        $class->title = $validated['title'];
+        $class->trainer_name = $validated['trainer_name'];
+        $class->date_iso = $validated['start_date'];
+        $class->end_date_iso = $validated['end_date'];
+        $class->time_range = $validated['start_time'] . ' - ' . $validated['end_time'];
+        $class->modality = $validated['modality'];
+        $class->level = 'General';
+        $class->spots_left = $validated['spots_left'];
+        $class->description = $validated['description'] ?? null;
 
-        // ✅ Si no mandan sessions, crea 1 como hoy (compatibilidad)
-        $sessions = $validated['sessions'] ?? [
-            [
-                'start_time' => $request->input('start_time'),
-                'end_time' => $request->input('end_time'),
-            ]
-        ];
+        // ✅ inicializa group_code para poder agrupar y luego añadir sesiones
+        $class->group_code = (string) Str::uuid();
 
-        $created = [];
+        $class->save();
 
-        foreach ($sessions as $s) {
-            $class = new ClassSession();
-            $class->title = $validated['title'];
-            $class->trainer_name = $validated['trainer_name'];
-            $class->date_iso = $validated['start_date'];
-            $class->end_date_iso = $validated['end_date'];
-            $class->time_range = $s['start_time'] . ' - ' . $s['end_time'];
-            $class->modality = $validated['modality'];
-            $class->level = 'General';
-            $class->spots_left = $validated['spots_left'];
-            $class->description = $validated['description'] ?? null;
-
-            // 🔥 agrupar
-            $class->group_code = $groupCode;
-
-            $class->save();
-            $created[] = $class;
-        }
-
-        return response()->json([
-            'group_code' => $groupCode,
-            'sessions_created' => count($created),
-            'classes' => $created,
-        ], 201);
+        return response()->json(['class' => $class], 201);
     }
 
+    /**
+     * LISTADO PÚBLICO AGRUPADO (/api/classes-grouped)
+     */
     public function indexPublicGrouped()
     {
         $rows = ClassSession::orderBy('date_iso')
             ->orderBy('time_range')
             ->get();
 
-        // Agrupa por group_code (si es null, usa "single-{id}" para que igual funcione)
         $grouped = $rows->groupBy(function ($c) {
             return $c->group_code ?: ('single-' . $c->id);
         });
@@ -170,7 +156,6 @@ class ClassSessionController extends Controller
                 return [
                     'id' => $s->id,
                     'date_iso' => $s->date_iso,
-                    'end_date_iso' => $s->end_date_iso,
                     'time_range' => $s->time_range,
                     'spots_left' => (int) $s->spots_left,
                 ];
@@ -188,9 +173,7 @@ class ClassSessionController extends Controller
             ];
         })->values();
 
-        return response()->json([
-            'classes' => $classes,
-        ]);
+        return response()->json(['classes' => $classes]);
     }
 
     /**
@@ -209,7 +192,7 @@ class ClassSessionController extends Controller
             'end_time' => 'required',
             'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
-            'description' => 'nullable|string', // 👈 AGREGAR
+            'description' => 'nullable|string',
         ]);
 
         $class->title = $validated['title'];
@@ -221,32 +204,16 @@ class ClassSessionController extends Controller
         $class->level = 'General';
         $class->spots_left = $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
+
+        // ✅ si por alguna razón no tenía group_code, se lo ponemos
+        if (!$class->group_code) {
+            $class->group_code = (string) Str::uuid();
+        }
+
         $class->save();
 
-        $class->refresh();
-
-        [$startTime, $endTime] = array_map('trim', explode('-', $class->time_range));
-
-        return response()->json([
-            'class' => [
-                'id' => $class->id,
-                'title' => $class->title,
-                'trainer_id' => $class->trainer_id,
-                'trainer_name' => $class->trainer_name,
-                'start_date' => $class->date_iso,
-                'end_date' => $class->end_date_iso ?? $class->date_iso,
-                'start_time' => $startTime,
-                'end_time' => $endTime,
-                'date_iso' => $class->date_iso,
-                'time_range' => $class->time_range,
-                'modality' => $class->modality,
-                'level' => $class->level,
-                'spots_left' => $class->spots_left,
-                'description' => $class->description, // 👈 devolverla también
-            ],
-        ]);
+        return response()->json(['class' => $class]);
     }
-
 
     /**
      * ELIMINAR CLASE (ADMIN – DELETE /api/admin/classes/{id})
@@ -259,6 +226,10 @@ class ClassSessionController extends Controller
         return response()->json(['deleted' => true]);
     }
 
+    /**
+     * ✅ AÑADIR SESIONES (POST /api/admin/classes/{id}/sessions)
+     * Crea nuevas filas en class_sessions con el mismo group_code.
+     */
     public function addSessions(Request $request, $id)
     {
         $base = ClassSession::findOrFail($id);
@@ -269,7 +240,7 @@ class ClassSessionController extends Controller
             'sessions.*.end_time' => 'required|string',
         ]);
 
-        // Asegurar que la clase base tenga group_code
+        // Asegurar group_code
         if (!$base->group_code) {
             $base->group_code = (string) Str::uuid();
             $base->save();
@@ -278,18 +249,18 @@ class ClassSessionController extends Controller
         $created = [];
 
         foreach ($validated['sessions'] as $s) {
-            $new = new ClassSession();
-            $new->title = $base->title;
-            $new->trainer_name = $base->trainer_name;
-            $new->date_iso = $base->date_iso;              // misma fecha (si quieres, luego lo hacemos editable)
-            $new->end_date_iso = $base->end_date_iso;
-            $new->time_range = $s['start_time'] . ' - ' . $s['end_time'];
-            $new->modality = $base->modality;
-            $new->level = $base->level;
-            $new->spots_left = $base->spots_left;
-            $new->description = $base->description;
-            $new->group_code = $base->group_code;
-            $new->save();
+            $new = ClassSession::create([
+                'title' => $base->title,
+                'trainer_name' => $base->trainer_name,
+                'date_iso' => $base->date_iso,
+                'end_date_iso' => $base->end_date_iso,
+                'time_range' => $s['start_time'] . ' - ' . $s['end_time'],
+                'modality' => $base->modality,
+                'level' => $base->level ?? 'General',
+                'spots_left' => $base->spots_left,
+                'description' => $base->description,
+                'group_code' => $base->group_code, // ✅ clave
+            ]);
 
             $created[] = $new;
         }
@@ -297,6 +268,7 @@ class ClassSessionController extends Controller
         return response()->json([
             'ok' => true,
             'group_code' => $base->group_code,
+            'created_count' => count($created),
             'created' => $created,
         ], 201);
     }

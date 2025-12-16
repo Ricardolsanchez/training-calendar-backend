@@ -22,6 +22,7 @@ class ClassSession extends Model
         'modality',
         'level',
         'spots_left',
-        'description'
+        'description',
+        'group_code'
     ];
 }
