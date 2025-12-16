@@ -272,4 +272,78 @@ class ClassSessionController extends Controller
             'created' => $created,
         ], 201);
     }
+
+    public function syncSessions(Request $request, $id)
+    {
+        $base = ClassSession::findOrFail($id);
+
+        $validated = $request->validate([
+            'sessions' => 'required|array|min:1',
+            'sessions.*.id' => 'nullable|integer',
+            'sessions.*.start_time' => 'required|string',
+            'sessions.*.end_time' => 'required|string',
+        ]);
+
+        // asegurar group_code
+        if (!$base->group_code) {
+            $base->group_code = (string) Str::uuid();
+            $base->save();
+        }
+
+        $groupCode = $base->group_code;
+
+        // ids que vienen en payload
+        $incomingIds = collect($validated['sessions'])
+            ->pluck('id')
+            ->filter()
+            ->map(fn($v) => (int) $v)
+            ->values();
+
+        // 1) borrar sesiones del grupo que NO vienen (para “editar cantidad”)
+        ClassSession::where('group_code', $groupCode)
+            ->when($incomingIds->isNotEmpty(), fn($q) => $q->whereNotIn('id', $incomingIds))
+            ->when($incomingIds->isEmpty(), fn($q) => $q) // si no viene ningún id, se reemplaza todo
+            ->delete();
+
+        $saved = [];
+
+        // 2) upsert (update o create)
+        foreach ($validated['sessions'] as $s) {
+            $timeRange = $s['start_time'] . ' - ' . $s['end_time'];
+
+            if (!empty($s['id'])) {
+                $row = ClassSession::where('group_code', $groupCode)->findOrFail($s['id']);
+                $row->time_range = $timeRange;
+                $row->save();
+                $saved[] = $row;
+            } else {
+                $saved[] = ClassSession::create([
+                    'title' => $base->title,
+                    'trainer_name' => $base->trainer_name,
+                    'date_iso' => $base->date_iso,
+                    'end_date_iso' => $base->end_date_iso,
+                    'time_range' => $timeRange,
+                    'modality' => $base->modality,
+                    'level' => $base->level ?? 'General',
+                    'spots_left' => $base->spots_left,
+                    'description' => $base->description,
+                    'group_code' => $groupCode,
+                ]);
+            }
+        }
+
+        // devolver ordenadas
+        $fresh = ClassSession::where('group_code', $groupCode)
+            ->orderBy('date_iso')
+            ->orderBy('time_range')
+            ->get();
+
+        return response()->json([
+            'ok' => true,
+            'group_code' => $groupCode,
+            'sessions_count' => $fresh->count(),
+            'sessions' => $fresh,
+        ]);
+    }
+
 }
