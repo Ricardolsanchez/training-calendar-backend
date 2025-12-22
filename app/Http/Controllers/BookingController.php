@@ -8,8 +8,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\View;
-use Illuminate\Support\Facades\Mail;
-use App\Mail\TrainingMissedMail;
 use App\Services\GoogleScriptMailer;
 
 class BookingController extends Controller
@@ -18,10 +16,7 @@ class BookingController extends Controller
 
     public function store(Request $request)
     {
-        Log::info('GOOGLE URL ES:', [
-            'url' => config('services.google_script_mailer.url'),
-        ]);
-
+        Log::info('GOOGLE URL ES:', ['url' => config('services.google_script_mailer.url')]);
         Log::info('GOOGLE SECRET ES:', [
             'secret_present' => config('services.google_script_mailer.secret') ? true : false,
         ]);
@@ -227,8 +222,7 @@ class BookingController extends Controller
 
     private function getTrainerEmail(?string $trainerName): ?string
     {
-        if (!$trainerName)
-            return null;
+        if (!$trainerName) return null;
 
         $map = [
             'Sergio Osorio' => 'seosorio@alonsoalonsolaw.com',
@@ -260,6 +254,7 @@ class BookingController extends Controller
             $booking->status = $validated['status'];
             $booking->save();
 
+            // ✅ Buscar la clase/sesión
             if (!empty($booking->class_id)) {
                 $class = ClassSession::find($booking->class_id);
             } else {
@@ -268,25 +263,88 @@ class BookingController extends Controller
                     ->first();
             }
 
-            $calendarUrl = $validated['calendar_url'] ?? null;
+            $calendarUrlFromAdmin = $validated['calendar_url'] ?? null;
 
-            if ($class && $calendarUrl && Schema::hasColumn('class_sessions', 'calendar_url')) {
-                $class->calendar_url = $calendarUrl;
+            // ✅ Si el admin mandó un link manual, guardarlo
+            if ($class && $calendarUrlFromAdmin && Schema::hasColumn('class_sessions', 'calendar_url')) {
+                $class->calendar_url = $calendarUrlFromAdmin;
                 $class->save();
-            } elseif ($class && $calendarUrl && !Schema::hasColumn('class_sessions', 'calendar_url')) {
+            } elseif ($class && $calendarUrlFromAdmin && !Schema::hasColumn('class_sessions', 'calendar_url')) {
                 Log::warning('class_sessions no tiene columna calendar_url en producción', [
                     'class_id' => $class->id,
                 ]);
             }
 
-            if ($booking->status === 'accepted' && $class) {
+            /**
+             * ✅ AUTO-GENERATE MEET LINK
+             * - Solo cuando se ACEPTA
+             * - Solo si existe class
+             * - Solo si NO existe aún calendar_url
+             */
+            if (
+                $booking->status === 'accepted'
+                && $class
+                && Schema::hasColumn('class_sessions', 'calendar_url')
+                && empty($class->calendar_url)
+                && (empty($class->modality) || $class->modality === 'Online')
+            ) {
+                try {
+                    $date = $class->date_iso;
 
+                    $start = null;
+                    $end = null;
+
+                    if (!empty($class->time_range) && str_contains($class->time_range, '-')) {
+                        [$a, $b] = array_map('trim', explode('-', $class->time_range));
+                        $start = "{$date}T{$a}:00";
+                        $end   = "{$date}T{$b}:00";
+                    } else {
+                        $start = "{$date}T" . ($class->start_time ?? "09:00") . ":00";
+                        $end   = "{$date}T" . ($class->end_time ?? "10:00") . ":00";
+                    }
+
+                    // ⚠️ OJO: tu service debe existir y estar bien configurado
+                    $meet = \App\Services\GoogleCalendarMeetService::createMeetEvent([
+                        'summary' => "[Training] " . ($class->title ?? 'Session'),
+                        'description' => "Trainer: " . ($class->trainer_name ?? '—'),
+                        'start' => $start,
+                        'end' => $end,
+                        'timeZone' => 'America/Bogota',
+                        'calendarId' => env('GOOGLE_CALENDAR_ID', 'primary'),
+                    ]);
+
+                    $class->calendar_url = $meet['meet_link'];
+
+                    if (Schema::hasColumn('class_sessions', 'calendar_event_id')) {
+                        $class->calendar_event_id = $meet['event_id'];
+                    }
+
+                    $class->save();
+                } catch (\Throwable $e) {
+                    Log::error('Error creando Meet link con Google Calendar API', [
+                        'booking_id' => $booking->id,
+                        'class_id' => $class->id ?? null,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // ✅ calendarUrl final (prioridad: class->calendar_url, luego el del admin)
+            $finalCalendarUrl = null;
+            if ($class && Schema::hasColumn('class_sessions', 'calendar_url') && !empty($class->calendar_url)) {
+                $finalCalendarUrl = $class->calendar_url;
+            } else {
+                $finalCalendarUrl = $calendarUrlFromAdmin;
+            }
+
+            // ✅ Emails cuando aceptas
+            if ($booking->status === 'accepted' && $class) {
                 // participante
                 try {
                     $htmlUser = View::make('emails.class_accepted', [
                         'booking' => $booking,
                         'class' => $class,
-                        'calendarUrl' => $calendarUrl ?: $class->calendar_url,
+                        'calendarUrl' => $finalCalendarUrl,
                     ])->render();
 
                     GoogleScriptMailer::send(
@@ -311,6 +369,7 @@ class BookingController extends Controller
                         $htmlTrainer = View::make('emails.trainer_class_accepted', [
                             'booking' => $booking,
                             'class' => $class,
+                            'calendarUrl' => $finalCalendarUrl,
                         ])->render();
 
                         GoogleScriptMailer::send(
@@ -329,18 +388,13 @@ class BookingController extends Controller
                 }
             }
 
-            if (isset($class) && $class && Schema::hasColumn('class_sessions', 'calendar_url')) {
-                $booking->setAttribute('calendar_url', $class->calendar_url);
-            } else {
-                $booking->setAttribute('calendar_url', $calendarUrl);
-            }
+            $booking->setAttribute('calendar_url', $finalCalendarUrl);
 
             return response()->json([
                 'ok' => true,
                 'message' => 'Booking Updated',
                 'booking' => $booking,
             ]);
-
         } catch (\Throwable $e) {
             Log::error('Error en updateStatus', [
                 'booking_id' => $id,
@@ -361,13 +415,11 @@ class BookingController extends Controller
         try {
             $booking = Booking::findOrFail($id);
 
-            // Acepta cualquiera de los dos para no romper tu front actual
             $validated = $request->validate([
                 'attended' => 'nullable',
                 'attendedbutton' => 'nullable',
             ]);
 
-            // Normaliza a boolean/null aunque llegue string
             $raw = array_key_exists('attended', $validated)
                 ? $validated['attended']
                 : ($validated['attendedbutton'] ?? null);
@@ -376,7 +428,6 @@ class BookingController extends Controller
                 ? null
                 : filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
 
-            // Guarda en ambas columnas (así tu tabla queda consistente)
             $booking->attended = $attended;
             $booking->attendedbutton = $attended;
             $booking->save();
@@ -384,26 +435,20 @@ class BookingController extends Controller
             // Enviar correo si attended es false o null
             if ($attended !== true) {
                 try {
-                    $name = e($booking->name); // escapa caracteres raros por seguridad
+                    $name = e($booking->name);
 
                     $html = "
-                    <p>Hola {$name},</p>
-
-                    <p><strong>It looks like you missed your class session!</strong> 😕</p>
-
-                    <p>
-                      Please check our classes list and <strong>select a new available date</strong> for rescheduling.
-                    </p>
-
-                    <p>
-                      👉 Check our available dates<br>
-                      <a href=\"https://training-calendar-managment.netlify.app/\" target=\"_blank\">
-                        Available Classes
-                      </a>
-                    </p>
-
-                    <p>Best Regards<br>Alonso & Alonso Academy</p>
-                ";
+                        <p>Hola {$name},</p>
+                        <p><strong>It looks like you missed your class session!</strong> 😕</p>
+                        <p>Please check our classes list and <strong>select a new available date</strong> for rescheduling.</p>
+                        <p>
+                          👉 Check our available dates<br>
+                          <a href=\"https://training-calendar-managment.netlify.app/\" target=\"_blank\">
+                            Available Classes
+                          </a>
+                        </p>
+                        <p>Best Regards<br>Alonso & Alonso Academy</p>
+                    ";
 
                     $sent = GoogleScriptMailer::send(
                         $booking->email,
@@ -419,7 +464,6 @@ class BookingController extends Controller
                         ]);
                     }
                 } catch (\Throwable $e) {
-                    // NO tumbes el endpoint por el correo
                     Log::error('Error enviando mail via GoogleScriptMailer (updateAttendance)', [
                         'booking_id' => $booking->id,
                         'error' => $e->getMessage(),
@@ -432,7 +476,6 @@ class BookingController extends Controller
                 'message' => 'Attendance updated',
                 'booking' => $booking,
             ]);
-
         } catch (\Throwable $e) {
             Log::error('Error updating attendance', [
                 'booking_id' => $id,
