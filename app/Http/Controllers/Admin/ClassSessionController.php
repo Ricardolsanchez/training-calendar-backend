@@ -168,6 +168,11 @@ class ClassSessionController extends Controller
                 'modality' => $first->modality,
                 'level' => $first->level,
                 'description' => $first->description,
+
+                // ✅✅✅ AQUÍ MISMO VA ESTO
+                'start_date_iso' => $first->date_iso,
+                'end_date_iso' => $first->end_date_iso ?? $first->date_iso,
+
                 'sessions_count' => $sessions->count(),
                 'sessions' => $sessions,
             ];
