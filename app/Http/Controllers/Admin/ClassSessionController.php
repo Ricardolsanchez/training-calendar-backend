@@ -235,49 +235,6 @@ class ClassSessionController extends Controller
      * ✅ AÑADIR SESIONES (POST /api/admin/classes/{id}/sessions)
      * Crea nuevas filas en class_sessions con el mismo group_code.
      */
-    public function addSessions(Request $request, $id)
-    {
-        $base = ClassSession::findOrFail($id);
-
-        $validated = $request->validate([
-            'sessions' => 'required|array|min:1',
-            'sessions.*.start_time' => 'required|string',
-            'sessions.*.end_time' => 'required|string',
-        ]);
-
-        // Asegurar group_code
-        if (!$base->group_code) {
-            $base->group_code = (string) Str::uuid();
-            $base->save();
-        }
-
-        $created = [];
-
-        foreach ($validated['sessions'] as $s) {
-            $new = ClassSession::create([
-                'title' => $base->title,
-                'trainer_name' => $base->trainer_name,
-                'date_iso' => $base->date_iso,
-                'end_date_iso' => $base->end_date_iso,
-                'time_range' => $s['start_time'] . ' - ' . $s['end_time'],
-                'modality' => $base->modality,
-                'level' => $base->level ?? 'General',
-                'spots_left' => $base->spots_left,
-                'description' => $base->description,
-                'group_code' => $base->group_code, // ✅ clave
-            ]);
-
-            $created[] = $new;
-        }
-
-        return response()->json([
-            'ok' => true,
-            'group_code' => $base->group_code,
-            'created_count' => count($created),
-            'created' => $created,
-        ], 201);
-    }
-
     public function syncSessions(Request $request, $id)
     {
         $base = ClassSession::findOrFail($id);
@@ -285,11 +242,11 @@ class ClassSessionController extends Controller
         $validated = $request->validate([
             'sessions' => 'required|array|min:1',
             'sessions.*.id' => 'nullable|integer',
+            'sessions.*.date_iso' => 'required|date',
             'sessions.*.start_time' => 'required|string',
             'sessions.*.end_time' => 'required|string',
         ]);
 
-        // asegurar group_code
         if (!$base->group_code) {
             $base->group_code = (string) Str::uuid();
             $base->save();
@@ -297,27 +254,36 @@ class ClassSessionController extends Controller
 
         $groupCode = $base->group_code;
 
-        // ids que vienen en payload
+        $rangeStart = $base->date_iso;
+        $rangeEnd = $base->end_date_iso ?? $base->date_iso;
+
         $incomingIds = collect($validated['sessions'])
             ->pluck('id')
             ->filter()
             ->map(fn($v) => (int) $v)
             ->values();
 
-        // 1) borrar sesiones del grupo que NO vienen (para “editar cantidad”)
         ClassSession::where('group_code', $groupCode)
             ->when($incomingIds->isNotEmpty(), fn($q) => $q->whereNotIn('id', $incomingIds))
-            ->when($incomingIds->isEmpty(), fn($q) => $q) // si no viene ningún id, se reemplaza todo
+            ->when($incomingIds->isEmpty(), fn($q) => $q)
             ->delete();
 
         $saved = [];
 
-        // 2) upsert (update o create)
         foreach ($validated['sessions'] as $s) {
+
+            if ($s['date_iso'] < $rangeStart || $s['date_iso'] > $rangeEnd) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => "Session date {$s['date_iso']} is outside range {$rangeStart} - {$rangeEnd}"
+                ], 422);
+            }
+
             $timeRange = $s['start_time'] . ' - ' . $s['end_time'];
 
             if (!empty($s['id'])) {
                 $row = ClassSession::where('group_code', $groupCode)->findOrFail($s['id']);
+                $row->date_iso = $s['date_iso'];
                 $row->time_range = $timeRange;
                 $row->save();
                 $saved[] = $row;
@@ -325,7 +291,7 @@ class ClassSessionController extends Controller
                 $saved[] = ClassSession::create([
                     'title' => $base->title,
                     'trainer_name' => $base->trainer_name,
-                    'date_iso' => $base->date_iso,
+                    'date_iso' => $s['date_iso'],
                     'end_date_iso' => $base->end_date_iso,
                     'time_range' => $timeRange,
                     'modality' => $base->modality,
@@ -337,7 +303,6 @@ class ClassSessionController extends Controller
             }
         }
 
-        // devolver ordenadas
         $fresh = ClassSession::where('group_code', $groupCode)
             ->orderBy('date_iso')
             ->orderBy('time_range')
