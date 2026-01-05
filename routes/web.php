@@ -157,8 +157,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::post('/api/admin/classes/{id}/sessions', [ClassSessionController::class, 'addSessions'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
-    Route::put('/api/admin/classes/{id}/sessions', [ClassSessionController::class, 'syncSessions'])
-        ->withoutMiddleware([ValidateCsrfToken::class]);
+    Route::put('/admin/classes/{id}/sessions', [ClassSessionController::class, 'syncSessions']);
 
 });
 
