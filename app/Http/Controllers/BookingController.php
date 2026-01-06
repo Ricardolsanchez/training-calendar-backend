@@ -222,7 +222,8 @@ class BookingController extends Controller
 
     private function getTrainerEmail(?string $trainerName): ?string
     {
-        if (!$trainerName) return null;
+        if (!$trainerName)
+            return null;
 
         $map = [
             'Sergio Osorio' => 'seosorio@alonsoalonsolaw.com',
@@ -297,10 +298,10 @@ class BookingController extends Controller
                     if (!empty($class->time_range) && str_contains($class->time_range, '-')) {
                         [$a, $b] = array_map('trim', explode('-', $class->time_range));
                         $start = "{$date}T{$a}:00";
-                        $end   = "{$date}T{$b}:00";
+                        $end = "{$date}T{$b}:00";
                     } else {
                         $start = "{$date}T" . ($class->start_time ?? "09:00") . ":00";
-                        $end   = "{$date}T" . ($class->end_time ?? "10:00") . ":00";
+                        $end = "{$date}T" . ($class->end_time ?? "10:00") . ":00";
                     }
 
                     // ⚠️ OJO: tu service debe existir y estar bien configurado
@@ -408,6 +409,21 @@ class BookingController extends Controller
         }
     }
 
+    public function updateSessionAttendance(Request $request, $bookingId, $sessionId)
+    {
+        $validated = $request->validate([
+            'attended' => 'nullable|boolean',
+        ]);
+
+        $row = \DB::table('booking_session_attendance')->updateOrInsert(
+            ['booking_id' => (int) $bookingId, 'class_session_id' => (int) $sessionId],
+            ['attended' => $validated['attended'], 'updated_at' => now(), 'created_at' => now()]
+        );
+
+        return response()->json(['ok' => true]);
+    }
+
+
     // ==================== ADMIN: ASISTENCIA (TRUE / FALSE / NULL) ====================
 
     public function updateAttendance(Request $request, int $id)
@@ -416,53 +432,49 @@ class BookingController extends Controller
             $booking = Booking::findOrFail($id);
 
             $validated = $request->validate([
-                'attended' => 'nullable',
-                'attendedbutton' => 'nullable',
+                'attendedbutton' => 'nullable|boolean', // ✅ tri-estado real
             ]);
 
-            $raw = array_key_exists('attended', $validated)
-                ? $validated['attended']
-                : ($validated['attendedbutton'] ?? null);
+            // ✅ si no viene la key, no cambies nada
+            if (!array_key_exists('attendedbutton', $validated)) {
+                return response()->json([
+                    'ok' => true,
+                    'message' => 'No changes',
+                    'booking' => $booking,
+                ]);
+            }
 
-            $attended = is_null($raw)
-                ? null
-                : filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            $attended = $validated['attendedbutton']; // true/false/null
 
-            $booking->attended = $attended;
             $booking->attendedbutton = $attended;
             $booking->save();
 
-            // Enviar correo si attended es false o null
-            if ($attended !== true) {
+            // ✅ IMPORTANTE: no mandar email cuando está en null (not marked)
+            // solo mandar email cuando explícitamente sea false
+            if ($attended === false) {
                 try {
                     $name = e($booking->name);
 
                     $html = "
-                        <p>Hola {$name},</p>
-                        <p><strong>It looks like you missed your class session!</strong> 😕</p>
-                        <p>Please check our classes list and <strong>select a new available date</strong> for rescheduling.</p>
-                        <p>
-                          👉 Check our available dates<br>
-                          <a href=\"https://training-calendar-managment.netlify.app/\" target=\"_blank\">
-                            Available Classes
-                          </a>
-                        </p>
-                        <p>Best Regards<br>Alonso & Alonso Academy</p>
-                    ";
+                    <p>Hola {$name},</p>
+                    <p><strong>It looks like you missed your class session!</strong> 😕</p>
+                    <p>Please check our classes list and <strong>select a new available date</strong> for rescheduling.</p>
+                    <p>
+                      👉 Check our available dates<br>
+                      <a href=\"https://training-calendar-managment.netlify.app/\" target=\"_blank\">
+                        Available Classes
+                      </a>
+                    </p>
+                    <p>Best Regards<br>Alonso & Alonso Academy</p>
+                ";
 
-                    $sent = GoogleScriptMailer::send(
+                    GoogleScriptMailer::send(
                         $booking->email,
                         $booking->name,
                         'We missed you in training',
                         $html,
                         'We missed you in training'
                     );
-
-                    if (!$sent) {
-                        Log::warning('GoogleScriptMailer::send devolvió false en updateAttendance()', [
-                            'booking_id' => $booking->id,
-                        ]);
-                    }
                 } catch (\Throwable $e) {
                     Log::error('Error enviando mail via GoogleScriptMailer (updateAttendance)', [
                         'booking_id' => $booking->id,
