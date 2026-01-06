@@ -255,6 +255,15 @@ class BookingController extends Controller
             $booking->status = $validated['status'];
             $booking->save();
 
+            // ✅ Si se acepta, attendance debe quedar SIN MARCAR (null)
+            if ($booking->status === 'accepted') {
+                $booking->attendedbutton = null;
+                // si aún usas attended también, igual:
+                $booking->attended = null;
+                $booking->save();
+            }
+
+
             // ✅ Buscar la clase/sesión
             if (!empty($booking->class_id)) {
                 $class = ClassSession::find($booking->class_id);
