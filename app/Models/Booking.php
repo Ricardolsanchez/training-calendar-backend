@@ -23,11 +23,21 @@ class Booking extends Model
         'status',
         'class_id',
         'calendar_url',
-        'attendedbutton', // 👈 NUEVO
+        'attendedbutton',
+        'group_code', // ✅ IMPORTANTÍSIMO si ya estás mandando group_code desde el FE
     ];
 
-    // 👇 ESTO ES LO QUE TE FALTABA (va justo después de $fillable)
     protected $casts = [
-        'attendedbutton' => 'boolean', // 👈 NUEVO
+        'attendedbutton' => 'boolean',
+        // opcional:
+        // 'start_date' => 'date',
+        // 'end_date' => 'date',
+        // 'original_start_date' => 'date',
+        // 'original_end_date' => 'date',
     ];
+
+    public function bookingSessions()
+    {
+        return $this->hasMany(\App\Models\BookingSession::class);
+    }
 }

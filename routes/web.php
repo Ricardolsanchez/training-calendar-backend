@@ -137,7 +137,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::delete('/api/admin/bookings/{id}', [BookingController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
-    Route::put('/api/admin/bookings/{bookingId}/sessions/{sessionId}/attendance', [BookingController::class, 'updateSessionAttendance'])
+
+    Route::put('/api/admin/booking-sessions/{id}', [\App\Http\Controllers\Admin\BookingSessionController::class, 'update'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
     // ===== STATS / KPIS =====

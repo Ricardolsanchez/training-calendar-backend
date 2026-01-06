@@ -6,13 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class ClassSession extends Model
 {
-    // 👇 Nombre real de la tabla en Supabase
     protected $table = 'class_sessions';
 
-    // 👇 Si tu tabla NO tiene created_at / updated_at
+    // ✅ Pon esto SOLO si tu tabla realmente NO tiene timestamps
     public $timestamps = false;
 
-    // 👇 Campos que se pueden escribir masivamente
     protected $fillable = [
         'title',
         'trainer_name',
@@ -23,6 +21,11 @@ class ClassSession extends Model
         'level',
         'spots_left',
         'description',
-        'group_code'
+        'group_code',
+    ];
+
+    // Opcional (recomendado):
+    protected $casts = [
+        'spots_left' => 'integer',
     ];
 }
