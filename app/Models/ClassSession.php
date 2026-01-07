@@ -28,4 +28,11 @@ class ClassSession extends Model
     protected $casts = [
         'spots_left' => 'integer',
     ];
+
+    public function bookings()
+    {
+        return $this->belongsToMany(\App\Models\Booking::class, 'booking_sessions', 'class_session_id', 'booking_id')
+            ->withPivot(['attended'])
+            ->withTimestamps();
+    }
 }

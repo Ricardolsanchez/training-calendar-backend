@@ -424,14 +424,20 @@ class BookingController extends Controller
             'attended' => 'nullable|boolean',
         ]);
 
-        $row = \DB::table('booking_session_attendance')->updateOrInsert(
-            ['booking_id' => (int) $bookingId, 'class_session_id' => (int) $sessionId],
-            ['attended' => $validated['attended'], 'updated_at' => now(), 'created_at' => now()]
+        \DB::table('booking_sessions')->updateOrInsert(
+            [
+                'booking_id' => (int) $bookingId,
+                'class_session_id' => (int) $sessionId,
+            ],
+            [
+                'attended' => $validated['attended'],
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
         );
 
         return response()->json(['ok' => true]);
     }
-
 
     // ==================== ADMIN: ASISTENCIA (TRUE / FALSE / NULL) ====================
 
@@ -457,6 +463,20 @@ class BookingController extends Controller
 
             $booking->attendedbutton = $attended;
             $booking->save();
+
+            if (!empty($booking->class_id)) {
+                \DB::table('booking_sessions')->updateOrInsert(
+                    [
+                        'booking_id' => (int) $booking->id,
+                        'class_session_id' => (int) $booking->class_id,
+                    ],
+                    [
+                        'attended' => $attended, // true/false/null
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
+            }
 
             // ✅ IMPORTANTE: no mandar email cuando está en null (not marked)
             // solo mandar email cuando explícitamente sea false

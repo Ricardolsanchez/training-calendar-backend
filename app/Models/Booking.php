@@ -40,4 +40,12 @@ class Booking extends Model
     {
         return $this->hasMany(\App\Models\BookingSession::class);
     }
+
+    public function sessions()
+    {
+        return $this->belongsToMany(\App\Models\ClassSession::class, 'booking_sessions', 'booking_id', 'class_session_id')
+            ->withPivot(['attended'])
+            ->withTimestamps();
+    }
+
 }
