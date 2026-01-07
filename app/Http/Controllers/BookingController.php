@@ -221,7 +221,8 @@ class BookingController extends Controller
 
     private function getTrainerEmail(?string $trainerName): ?string
     {
-        if (!$trainerName) return null;
+        if (!$trainerName)
+            return null;
 
         $map = [
             'Sergio Osorio' => 'seosorio@alonsoalonsolaw.com',
@@ -264,7 +265,35 @@ class BookingController extends Controller
 
             $calendarUrlFromAdmin = $validated['calendar_url'] ?? null;
 
-            // Si admin manda link manual, lo guardamos en ESA sesión
+            // ✅ (1) Si aceptas: Adjuntar TODAS las sesiones del grupo al booking (pivot)
+            // Esto crea booking_sessions con 2 filas (o las que existan en el grupo)
+            if ($booking->status === 'accepted' && $class) {
+                // si existe group_code en tu class_sessions, usamos eso
+                $groupCode = $class->group_code ?? null;
+
+                if (!empty($groupCode)) {
+                    $sessions = ClassSession::where('group_code', $groupCode)
+                        ->orderBy('date_iso')
+                        ->orderBy('time_range')
+                        ->get();
+                } else {
+                    // fallback: al menos adjuntar la sesión base
+                    $sessions = collect([$class]);
+                }
+
+                $attachData = [];
+                foreach ($sessions as $s) {
+                    $attachData[$s->id] = ['attended' => null];
+                }
+
+                $booking->sessions()->syncWithoutDetaching($attachData);
+
+                // ✅ (2) Email de "confirmed" SOLO para la primera sesión del grupo (no para cualquier $class)
+                // así no mandas el link equivocado si el booking.class_id era otra cosa
+                $class = $sessions->first() ?? $class;
+            }
+
+            // Si admin manda link manual, lo guardamos en ESA sesión (ojo: es la que quedó en $class arriba)
             if ($class && $calendarUrlFromAdmin && Schema::hasColumn('class_sessions', 'calendar_url')) {
                 $class->calendar_url = $calendarUrlFromAdmin;
                 $class->save();
@@ -281,8 +310,6 @@ class BookingController extends Controller
                 try {
                     $generatedUrl = GoogleMeetService::ensureSessionEvent($class);
 
-                    // ensureSessionEvent ya guarda calendar_url y calendar_event_id.
-                    // Pero por si retornó vacío:
                     if (!empty($generatedUrl)) {
                         $class->calendar_url = $generatedUrl;
                         $class->save();
@@ -296,7 +323,7 @@ class BookingController extends Controller
                 }
             }
 
-            // ✅ calendarUrl final (prioridad: class->calendar_url, luego admin)
+            // calendarUrl final (prioridad: class->calendar_url, luego admin)
             $finalCalendarUrl = null;
             if ($class && Schema::hasColumn('class_sessions', 'calendar_url') && !empty($class->calendar_url)) {
                 $finalCalendarUrl = $class->calendar_url;
@@ -304,7 +331,7 @@ class BookingController extends Controller
                 $finalCalendarUrl = $calendarUrlFromAdmin;
             }
 
-            // ✅ Email solo cuando aceptas
+            // Email solo cuando aceptas (para la PRIMERA sesión)
             if ($booking->status === 'accepted' && $class) {
 
                 // usuario
@@ -375,7 +402,6 @@ class BookingController extends Controller
             ], 500);
         }
     }
-
     /**
      * ✅ NUEVO: Attendance POR SESIÓN (pivot)
      * - Si attended === true => desbloquea la siguiente sesión y manda correo con su link.
