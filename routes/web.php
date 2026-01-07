@@ -117,7 +117,6 @@ Route::post('/api/bookings', [BookingController::class, 'store'])
     ->withoutMiddleware([ValidateCsrfToken::class]);
 
 Route::get('/api/classes', [ClassSessionController::class, 'indexPublic']);
-
 Route::get('/api/classes-grouped', [ClassSessionController::class, 'indexPublicGrouped']);
 
 Route::get('/api/my-sessions', [ClassController::class, 'mySessions'])
@@ -133,6 +132,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // ===== RESERVAS =====
     Route::get('/api/admin/bookings', [BookingController::class, 'index']);
 
+    // ✅ NUEVO: attendance POR SESIÓN (pivot)  ← ESTE ES EL QUE NECESITAS PARA DESBLOQUEO
+    Route::put('/api/admin/bookings/{booking}/sessions/{session}/attendance', [BookingController::class, 'setSessionAttendance'])
+        ->withoutMiddleware([ValidateCsrfToken::class]);
+
+    // (LEGACY) attendance por booking (tu panel actual) — NO recomendado para el flujo nuevo
     Route::put('/api/admin/bookings/{id}/attendance', [BookingController::class, 'updateAttendance'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
@@ -147,7 +151,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // ===== STATS / KPIS =====
     Route::get('/api/admin/stats/kpis', [AdminStatsController::class, 'kpis']);
-    Route::get('/admin/stats/kpis', [AdminStatsController::class, 'kpis']); // alias por si el FE llama /admin/...
+    Route::get('/admin/stats/kpis', [AdminStatsController::class, 'kpis']); // alias
     Route::get('/api/admin/stats/kpis.csv', [AdminStatsController::class, 'exportKpisCsv']);
 
     // ===== CLASES ADMIN =====
@@ -167,8 +171,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::put('/api/admin/classes/{id}/sessions', [ClassSessionController::class, 'syncSessions'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
-    
-
 });
 
 /*
