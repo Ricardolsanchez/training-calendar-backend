@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ClassController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Artisan;
@@ -119,6 +120,9 @@ Route::get('/api/classes', [ClassSessionController::class, 'indexPublic']);
 
 Route::get('/api/classes-grouped', [ClassSessionController::class, 'indexPublicGrouped']);
 
+Route::get('/api/my-sessions', [ClassController::class, 'mySessions'])
+    ->withoutMiddleware([ValidateCsrfToken::class]);
+
 /*
 |---------------------------------------------------------------------------
 | ADMIN API PROTEGIDA
@@ -163,6 +167,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::put('/api/admin/classes/{id}/sessions', [ClassSessionController::class, 'syncSessions'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
+    
 
 });
 
