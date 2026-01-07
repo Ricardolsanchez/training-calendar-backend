@@ -128,12 +128,25 @@ class BookingController extends Controller
             ], 403);
         }
 
-        $bookings = Booking::orderBy('created_at', 'desc')->get();
+        // ✅ IMPORTANTE: traer sessions + pivot.attended
+        $bookings = Booking::with([
+            'sessions' => function ($q) {
+                $q->orderBy('date_iso')->orderBy('time_range');
+            }
+        ])
+            ->orderBy('created_at', 'desc')
+            ->get();
 
+        // opcional: setear calendar_url base (no rompe)
         $bookings = $bookings->map(function (Booking $b) {
-            // sesión base (la primera / seleccionada)
+
+            // si tiene class_id usamos esa, si no, usamos la primera session si existe
+            $class = null;
+
             if (!empty($b->class_id)) {
                 $class = ClassSession::find($b->class_id);
+            } elseif ($b->sessions && $b->sessions->count() > 0) {
+                $class = $b->sessions->first();
             } else {
                 $class = ClassSession::where('title', $b->name)
                     ->where('date_iso', $b->start_date)
@@ -141,6 +154,15 @@ class BookingController extends Controller
             }
 
             $b->setAttribute('calendar_url', $class?->calendar_url);
+
+            // ✅ para que el frontend lea attended fácil (si tu JSON no expone pivot)
+            // (esto NO cambia DB; solo el response)
+            if ($b->relationLoaded('sessions')) {
+                $b->sessions->transform(function ($s) {
+                    $s->attended = $s->pivot->attended ?? null;
+                    return $s;
+                });
+            }
 
             return $b;
         });
