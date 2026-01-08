@@ -288,13 +288,11 @@ class BookingController extends Controller
                         ->first();
 
                 if ($base) {
-                    // ✅ Backup clave: setear group_code en booking si venía vacío
                     if (empty($booking->group_code) && !empty($base->group_code)) {
                         $booking->group_code = $base->group_code;
                         $booking->save();
                     }
 
-                    // ✅ Si base tiene group_code, trae TODO el grupo; si no, solo base
                     $sessions = !empty($base->group_code)
                         ? ClassSession::where('group_code', $base->group_code)
                             ->orderBy('date_iso')
@@ -333,7 +331,7 @@ class BookingController extends Controller
             }
 
             // =========================================================
-            // 5) Si es Online, generar Meet por sesión (best-effort)
+            // 5) (Opcional) Si es Online, generar Meet por sesión (best-effort)
             // =========================================================
             if (Schema::hasColumn('class_sessions', 'calendar_url')) {
                 foreach ($sessions as $s) {
@@ -356,10 +354,14 @@ class BookingController extends Controller
             }
 
             // =========================================================
-            // 6) Construir array para el email (sesiones con calendar_url o fallback link)
+            // ✅ 6) SOLO desbloqueada inicial: la PRIMERA sesión (no todas)
             // =========================================================
-            $sessionsForEmail = $sessions
+            $firstUnlocked = $sessions
                 ->sortBy(fn($s) => ($s->date_iso ?? '') . '|' . ($s->time_range ?? ''))
+                ->values()
+                ->take(1);
+
+            $sessionsForEmail = $firstUnlocked
                 ->map(function ($s) use ($booking) {
 
                     $url = !empty($s->calendar_url)
@@ -388,7 +390,7 @@ class BookingController extends Controller
                 ->toArray();
 
             // =========================================================
-            // 7) Email al usuario (best-effort)
+            // 7) Email al usuario (best-effort) -> SOLO 1 sesión
             // =========================================================
             try {
                 $htmlUser = View::make('emails.class_accepted', [
@@ -411,7 +413,7 @@ class BookingController extends Controller
             }
 
             // =========================================================
-            // 8) Email al trainer (best-effort)
+            // 8) Email al trainer (best-effort) -> SOLO 1 sesión (igual)
             // =========================================================
             try {
                 $trainerEmail = $this->getTrainerEmail($booking->trainer_name);
@@ -437,10 +439,9 @@ class BookingController extends Controller
             }
 
             // =========================================================
-            // 9) Respuesta: cargar sesiones + exponer sessions_for_email (opcional)
+            // 9) Respuesta: cargar sesiones (para adminpanel)
             // =========================================================
             $booking->load('sessions');
-            $booking->setAttribute('sessions_for_email', $sessionsForEmail);
 
             return response()->json([
                 'ok' => true,
@@ -491,12 +492,12 @@ class BookingController extends Controller
             ], 500);
         }
 
-        // 2) Si no es true, listo
+        // 2) Si no es true, listo (no desbloquea nada / no manda mail)
         if ($attended !== true) {
             return response()->json(['ok' => true]);
         }
 
-        // 3) Best-effort: desbloquear siguiente + correo
+        // 3) Best-effort: calcular siguiente + correo
         try {
             $q = $booking->sessions()->orderBy('date_iso');
             if (Schema::hasColumn('class_sessions', 'start_time')) {
@@ -514,9 +515,19 @@ class BookingController extends Controller
                 return response()->json(['ok' => true]);
             }
 
-            $calendarUrl = null;
+            // Generar/asegurar Meet (best-effort)
             try {
-                $calendarUrl = GoogleMeetService::ensureSessionEvent($next);
+                if (
+                    Schema::hasColumn('class_sessions', 'calendar_url') && empty($next->calendar_url)
+                    && (empty($next->modality) || $next->modality === 'Online')
+                ) {
+
+                    $generatedUrl = GoogleMeetService::ensureSessionEvent($next);
+                    if (!empty($generatedUrl)) {
+                        $next->calendar_url = $generatedUrl;
+                        $next->save();
+                    }
+                }
             } catch (\Throwable $e) {
                 Log::warning('setSessionAttendance(): ensureSessionEvent failed', [
                     'booking_id' => $booking->id,
@@ -525,11 +536,36 @@ class BookingController extends Controller
                 ]);
             }
 
+            // ✅ Construir SOLO 1 item para el mismo blade (sessions[])
+            $url = !empty($next->calendar_url)
+                ? $next->calendar_url
+                : \App\Support\GoogleCalendarLink::build(
+                    title: $next->title ?? $booking->name ?? 'Training Session',
+                    dateIso: $next->date_iso,
+                    timeRange: $next->time_range ?? '',
+                    details: "Trainer: " . ($booking->trainer_name ?? '—')
+                    . "\nBooking ID: {$booking->id}\nNotes: " . ($booking->notes ?? ''),
+                    location: $next->modality ?? null,
+                    tz: 'America/Bogota'
+                );
+
+            $sessionsForEmail = [
+                [
+                    'session_id' => $next->id,
+                    'title' => $next->title ?? $booking->name ?? 'Training Session',
+                    'date_iso' => $next->date_iso,
+                    'time_range' => $next->time_range ?? '—',
+                    'trainer_name' => $booking->trainer_name,
+                    'modality' => $next->modality ?? null,
+                    'calendar_url' => $url,
+                ]
+            ];
+
+            // ✅ Enviar email al usuario con SOLO la siguiente sesión desbloqueada
             try {
                 $htmlUser = View::make('emails.class_accepted', [
                     'booking' => $booking,
-                    'class' => $next,
-                    'calendarUrl' => $calendarUrl,
+                    'sessions' => $sessionsForEmail,
                 ])->render();
 
                 GoogleScriptMailer::send(
