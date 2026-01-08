@@ -17,11 +17,6 @@ class BookingController extends Controller
 
     public function store(Request $request)
     {
-        Log::info('GOOGLE URL ES:', ['url' => config('services.google_script_mailer.url')]);
-        Log::info('GOOGLE SECRET ES:', [
-            'secret_present' => config('services.google_script_mailer.secret') ? true : false,
-        ]);
-
         $validated = $request->validate([
             'class_id' => 'nullable|integer',
             'name' => 'required|string|max:255',
@@ -66,7 +61,7 @@ class BookingController extends Controller
             ], 422);
         }
 
-        if ($class->spots_left <= 0) {
+        if ((int) $class->spots_left <= 0) {
             return response()->json([
                 'ok' => false,
                 'message' => 'We’re sorry! We’ve run out of available seats for this class.',
@@ -74,11 +69,11 @@ class BookingController extends Controller
         }
 
         $bookingData = $validated;
-        $bookingData['class_id'] = $validated['class_id'] ?? ($class->id ?? null);
+        $bookingData['class_id'] = $validated['class_id'] ?? $class->id;
 
         $booking = Booking::create($bookingData);
 
-        $class->spots_left = $class->spots_left - 1;
+        $class->spots_left = (int) $class->spots_left - 1;
         $class->save();
 
         // email "received"
@@ -88,19 +83,13 @@ class BookingController extends Controller
                 'classSession' => $class,
             ])->render();
 
-            $sent = GoogleScriptMailer::send(
+            GoogleScriptMailer::send(
                 $booking->email,
                 $booking->name,
                 'Your class reservation has been received! ✅',
                 $html,
                 'Your class reservation has been received!'
             );
-
-            if (!$sent) {
-                Log::warning('GoogleScriptMailer::send devolvió false en store()', [
-                    'booking_id' => $booking->id,
-                ]);
-            }
         } catch (\Throwable $e) {
             Log::error('Error enviando ClassBookedMail via GoogleScriptMailer', [
                 'booking_id' => $booking->id,
@@ -120,7 +109,6 @@ class BookingController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-
         if (!$user || !$user->is_admin) {
             return response()->json([
                 'ok' => false,
@@ -128,35 +116,39 @@ class BookingController extends Controller
             ], 403);
         }
 
-        // ✅ IMPORTANTE: traer sessions + pivot.attended
+        // ✅ Traer sesiones + pivot
         $bookings = Booking::with([
             'sessions' => function ($q) {
-                $q->orderBy('date_iso')->orderBy('time_range');
+                // ⚠️ ordena SOLO por columnas que existan en class_sessions
+                if (Schema::hasColumn('class_sessions', 'date_iso')) {
+                    $q->orderBy('date_iso');
+                }
+                if (Schema::hasColumn('class_sessions', 'time_range')) {
+                    $q->orderBy('time_range');
+                }
             }
         ])
             ->orderBy('created_at', 'desc')
             ->get();
 
-        // opcional: setear calendar_url base (no rompe)
+        // Normalizar: exponer attended en cada session
         $bookings = $bookings->map(function (Booking $b) {
 
-            // si tiene class_id usamos esa, si no, usamos la primera session si existe
-            $class = null;
+            // setear calendar_url base (no rompe)
+            $baseClass = null;
 
             if (!empty($b->class_id)) {
-                $class = ClassSession::find($b->class_id);
-            } elseif ($b->sessions && $b->sessions->count() > 0) {
-                $class = $b->sessions->first();
+                $baseClass = ClassSession::find($b->class_id);
+            } elseif ($b->relationLoaded('sessions') && $b->sessions->count() > 0) {
+                $baseClass = $b->sessions->first();
             } else {
-                $class = ClassSession::where('title', $b->name)
+                $baseClass = ClassSession::where('title', $b->name)
                     ->where('date_iso', $b->start_date)
                     ->first();
             }
 
-            $b->setAttribute('calendar_url', $class?->calendar_url);
+            $b->setAttribute('calendar_url', $baseClass?->calendar_url);
 
-            // ✅ para que el frontend lea attended fácil (si tu JSON no expone pivot)
-            // (esto NO cambia DB; solo el response)
             if ($b->relationLoaded('sessions')) {
                 $b->sessions->transform(function ($s) {
                     $s->attended = $s->pivot->attended ?? null;
@@ -187,17 +179,22 @@ class BookingController extends Controller
             ], 404);
         }
 
-        if (!empty($booking->class_id)) {
-            $class = ClassSession::find($booking->class_id);
-        } else {
-            $class = ClassSession::where('title', $booking->name)
+        $class = !empty($booking->class_id)
+            ? ClassSession::find($booking->class_id)
+            : ClassSession::where('title', $booking->name)
                 ->where('date_iso', $booking->start_date)
                 ->first();
+
+        if ($class) {
+            $class->spots_left = (int) $class->spots_left + 1;
+            $class->save();
         }
 
-        if (!empty($class)) {
-            $class->spots_left = $class->spots_left + 1;
-            $class->save();
+        // limpiar pivots si existen (opcional pero sano)
+        try {
+            $booking->sessions()->detach();
+        } catch (\Throwable $e) {
+            // no bloquea el delete
         }
 
         $booking->delete();
@@ -243,8 +240,7 @@ class BookingController extends Controller
 
     private function getTrainerEmail(?string $trainerName): ?string
     {
-        if (!$trainerName)
-            return null;
+        if (!$trainerName) return null;
 
         $map = [
             'Sergio Osorio' => 'seosorio@alonsoalonsolaw.com',
@@ -276,31 +272,24 @@ class BookingController extends Controller
             $booking->status = $validated['status'];
             $booking->save();
 
-            // buscar sesión base
-            if (!empty($booking->class_id)) {
-                $class = ClassSession::find($booking->class_id);
-            } else {
-                $class = ClassSession::where('title', $booking->name)
+            // sesión base
+            $class = !empty($booking->class_id)
+                ? ClassSession::find($booking->class_id)
+                : ClassSession::where('title', $booking->name)
                     ->where('date_iso', $booking->start_date)
                     ->first();
-            }
 
             $calendarUrlFromAdmin = $validated['calendar_url'] ?? null;
 
-            // ✅ (1) Si aceptas: Adjuntar TODAS las sesiones del grupo al booking (pivot)
-            // Esto crea booking_sessions con 2 filas (o las que existan en el grupo)
+            // ✅ Si aceptas: adjuntar TODAS las sesiones del grupo al booking (pivot)
             if ($booking->status === 'accepted' && $class) {
-                // si existe group_code en tu class_sessions, usamos eso
-                $groupCode = $class->group_code ?? null;
+                $sessions = collect([$class]);
 
-                if (!empty($groupCode)) {
-                    $sessions = ClassSession::where('group_code', $groupCode)
-                        ->orderBy('date_iso')
-                        ->orderBy('time_range')
+                if (Schema::hasColumn('class_sessions', 'group_code') && !empty($class->group_code)) {
+                    $sessions = ClassSession::where('group_code', $class->group_code)
+                        ->when(Schema::hasColumn('class_sessions', 'date_iso'), fn($q) => $q->orderBy('date_iso'))
+                        ->when(Schema::hasColumn('class_sessions', 'time_range'), fn($q) => $q->orderBy('time_range'))
                         ->get();
-                } else {
-                    // fallback: al menos adjuntar la sesión base
-                    $sessions = collect([$class]);
                 }
 
                 $attachData = [];
@@ -308,20 +297,27 @@ class BookingController extends Controller
                     $attachData[$s->id] = ['attended' => null];
                 }
 
-                $booking->sessions()->syncWithoutDetaching($attachData);
+                // si falla pivot, NO quieres tumbar el accept
+                try {
+                    $booking->sessions()->syncWithoutDetaching($attachData);
+                } catch (\Throwable $e) {
+                    Log::error('Error adjuntando sesiones al booking (pivot)', [
+                        'booking_id' => $booking->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
 
-                // ✅ (2) Email de "confirmed" SOLO para la primera sesión del grupo (no para cualquier $class)
-                // así no mandas el link equivocado si el booking.class_id era otra cosa
+                // el correo de confirmación se manda con la PRIMERA del grupo
                 $class = $sessions->first() ?? $class;
             }
 
-            // Si admin manda link manual, lo guardamos en ESA sesión (ojo: es la que quedó en $class arriba)
+            // si admin manda link manual, guardarlo en esa sesión
             if ($class && $calendarUrlFromAdmin && Schema::hasColumn('class_sessions', 'calendar_url')) {
                 $class->calendar_url = $calendarUrlFromAdmin;
                 $class->save();
             }
 
-            // ✅ Si aceptas: asegurar link autogenerado (por sesión) si no hay uno
+            // asegurar link autogenerado si es online y no hay calendar_url
             if (
                 $booking->status === 'accepted'
                 && $class
@@ -331,13 +327,12 @@ class BookingController extends Controller
             ) {
                 try {
                     $generatedUrl = GoogleMeetService::ensureSessionEvent($class);
-
                     if (!empty($generatedUrl)) {
                         $class->calendar_url = $generatedUrl;
                         $class->save();
                     }
                 } catch (\Throwable $e) {
-                    Log::error('Error asegurando Meet link (ensureSessionEvent)', [
+                    Log::warning('Meet generation failed (ensureSessionEvent)', [
                         'booking_id' => $booking->id,
                         'class_id' => $class->id ?? null,
                         'error' => $e->getMessage(),
@@ -345,7 +340,7 @@ class BookingController extends Controller
                 }
             }
 
-            // calendarUrl final (prioridad: class->calendar_url, luego admin)
+            // calendarUrl final
             $finalCalendarUrl = null;
             if ($class && Schema::hasColumn('class_sessions', 'calendar_url') && !empty($class->calendar_url)) {
                 $finalCalendarUrl = $class->calendar_url;
@@ -353,10 +348,9 @@ class BookingController extends Controller
                 $finalCalendarUrl = $calendarUrlFromAdmin;
             }
 
-            // Email solo cuando aceptas (para la PRIMERA sesión)
+            // email solo cuando aceptas
             if ($booking->status === 'accepted' && $class) {
-
-                // usuario
+                // user
                 try {
                     $htmlUser = View::make('emails.class_accepted', [
                         'booking' => $booking,
@@ -372,7 +366,7 @@ class BookingController extends Controller
                         'Your class has been confirmed.'
                     );
                 } catch (\Throwable $e) {
-                    Log::error('Error enviando ClassAcceptedMail via GoogleScriptMailer', [
+                    Log::warning('Error enviando ClassAcceptedMail (GoogleScriptMailer)', [
                         'booking_id' => $booking->id,
                         'error' => $e->getMessage(),
                     ]);
@@ -381,7 +375,6 @@ class BookingController extends Controller
                 // trainer
                 try {
                     $trainerEmail = $this->getTrainerEmail($class->trainer_name);
-
                     if ($trainerEmail) {
                         $htmlTrainer = View::make('emails.trainer_class_accepted', [
                             'booking' => $booking,
@@ -398,7 +391,7 @@ class BookingController extends Controller
                         );
                     }
                 } catch (\Throwable $e) {
-                    Log::error('Error enviando TrainerClassAcceptedMail via GoogleScriptMailer', [
+                    Log::warning('Error enviando TrainerClassAcceptedMail (GoogleScriptMailer)', [
                         'booking_id' => $booking->id,
                         'error' => $e->getMessage(),
                     ]);
@@ -424,30 +417,20 @@ class BookingController extends Controller
             ], 500);
         }
     }
-    /**
-     * ✅ NUEVO: Attendance POR SESIÓN (pivot)
-     * - Si attended === true => desbloquea la siguiente sesión y manda correo con su link.
-     *
-     * IMPORTANTE: Esto asume que tu Booking tiene relación sessions() (belongsToMany)
-     * y pivot booking_sessions.attended.
-     */
-    use Illuminate\Support\Facades\Log;
-    use Illuminate\Support\Facades\View;
-    use App\Services\GoogleMeetService;
-    use App\Services\GoogleScriptMailer;
+
+    // ==================== ✅ NUEVO: ATTENDANCE POR SESIÓN (PIVOT) ====================
 
     public function setSessionAttendance(Request $request, Booking $booking, ClassSession $session)
     {
-        // 0) Validación
+        // ✅ validación (si no viene attended, lo tratamos como null)
         $validated = $request->validate([
             'attended' => 'nullable|boolean',
         ]);
 
-        // ⚠️ OJO: si por alguna razón no viene la key (raro), la tratamos como null
         $attended = array_key_exists('attended', $validated) ? $validated['attended'] : null;
 
+        // 1) Guardar pivot (si esto falla, ahí sí devolvemos 500)
         try {
-            // 1) Guardar pivot SIEMPRE (esto NO debe fallar)
             $booking->sessions()->syncWithoutDetaching([
                 $session->id => ['attended' => $attended],
             ]);
@@ -465,27 +448,26 @@ class BookingController extends Controller
             ], 500);
         }
 
-        // 2) Si NO es true, no desbloqueamos nada y devolvemos ok
+        // 2) si NO es true, respondemos OK y listo (esto evita 500)
         if ($attended !== true) {
             return response()->json(['ok' => true]);
         }
 
-        // 3) Buscar siguiente sesión (y si falla esto, NO tumba el endpoint)
+        // 3) Desbloqueo + correo: "best effort" (nunca tumba el toggle)
         try {
-            $all = $booking->sessions()
-                ->orderBy('date_iso')
-                ->orderBy('time_range') // si no existe, cámbialo por start_time
-                ->get()
-                ->values();
+            $q = $booking->sessions();
+            if (Schema::hasColumn('class_sessions', 'date_iso')) $q->orderBy('date_iso');
+            if (Schema::hasColumn('class_sessions', 'time_range')) $q->orderBy('time_range');
 
-            $idx = $all->search(fn($s) => $s->id === $session->id);
+            $all = $q->get()->values();
+
+            $idx = $all->search(fn($s) => (int) $s->id === (int) $session->id);
             $next = ($idx !== false) ? $all->get($idx + 1) : null;
 
             if (!$next) {
                 return response()->json(['ok' => true]);
             }
 
-            // 4) Intentar generar link + enviar correo (best effort)
             $calendarUrl = null;
 
             try {
@@ -521,7 +503,6 @@ class BookingController extends Controller
             }
 
             return response()->json(['ok' => true]);
-
         } catch (\Throwable $e) {
             Log::warning('Unlock logic failed after pivot was saved', [
                 'booking_id' => $booking->id,
@@ -529,14 +510,12 @@ class BookingController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            // ✅ IMPORTANTE: pivot ya se guardó, así que respondemos ok para no romper el toggle
+            // ✅ pivot ya se guardó => respondemos ok para no romper el toggle
             return response()->json(['ok' => true]);
         }
     }
 
-
     // ==================== (LEGACY) ADMIN: ASISTENCIA POR BOOKING ====================
-    // Te lo dejo para no romper tu AdminPanel actual, pero NO lo uses para el flujo por sesión.
 
     public function updateAttendance(Request $request, int $id)
     {
@@ -561,9 +540,13 @@ class BookingController extends Controller
 
             // Mantener compatibilidad con class_id (una sola sesión)
             if (!empty($booking->class_id)) {
-                $booking->sessions()->syncWithoutDetaching([
-                    (int) $booking->class_id => ['attended' => $attended]
-                ]);
+                try {
+                    $booking->sessions()->syncWithoutDetaching([
+                        (int) $booking->class_id => ['attended' => $attended]
+                    ]);
+                } catch (\Throwable $e) {
+                    // no bloquea legacy
+                }
             }
 
             // email solo cuando false

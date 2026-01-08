@@ -14,7 +14,7 @@ return new class extends Migration {
             $table->id();
             $table->foreignId('booking_id')->constrained('bookings')->cascadeOnDelete();
             $table->foreignId('class_session_id')->constrained('class_sessions')->cascadeOnDelete();
-            $table->boolean('attended')->nullable(); // null = not marked
+            $table->boolean('attended')->nullable()->change(); // null = not marked
             $table->timestamps();
 
             $table->unique(['booking_id', 'class_session_id']);
