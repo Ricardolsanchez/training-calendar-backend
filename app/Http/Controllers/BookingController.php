@@ -220,7 +220,8 @@ class BookingController extends Controller
 
     private function getTrainerEmail(?string $trainerName): ?string
     {
-        if (!$trainerName) return null;
+        if (!$trainerName)
+            return null;
 
         $map = [
             'Sergio Osorio' => 'seosorio@alonsoalonsolaw.com',
@@ -246,127 +247,166 @@ class BookingController extends Controller
 
             $validated = $request->validate([
                 'status' => 'required|in:accepted,denied',
-                'calendar_url' => 'nullable|string|max:2048',
+                'calendar_url' => 'nullable|string|max:2048', // si quieres dejar un link manual
             ]);
 
             $booking->status = $validated['status'];
             $booking->save();
 
-            $class = null;
-            if (!empty($booking->class_id)) {
-                $class = ClassSession::find($booking->class_id);
-            } else {
-                $class = ClassSession::where('title', $booking->name)
-                    ->where('date_iso', $booking->start_date)
-                    ->first();
+            // Si NO aceptó, no hacemos attach ni emails
+            if ($booking->status !== 'accepted') {
+                return response()->json([
+                    'ok' => true,
+                    'message' => 'Booking Updated',
+                    'booking' => $booking,
+                ]);
             }
 
+            // 1) Traer sesiones del grupo
+            $sessions = collect();
+
+            if (!empty($booking->group_code)) {
+                $sessions = ClassSession::where('group_code', $booking->group_code)
+                    ->orderBy('date_iso')
+                    ->orderBy('time_range')
+                    ->get();
+            }
+
+            // Fallback (por si booking no trae group_code)
+            if ($sessions->isEmpty()) {
+                $base = !empty($booking->class_id)
+                    ? ClassSession::find($booking->class_id)
+                    : ClassSession::where('title', $booking->name)
+                        ->where('date_iso', $booking->start_date)
+                        ->first();
+
+                if ($base) {
+                    $sessions = collect([$base]);
+                }
+            }
+
+            if ($sessions->isEmpty()) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => 'Could not resolve sessions for this booking.',
+                ], 422);
+            }
+
+            // 2) Adjuntar al booking (pivot attended = null)
+            $attachData = [];
+            foreach ($sessions as $s) {
+                $attachData[$s->id] = ['attended' => null];
+            }
+            $booking->sessions()->syncWithoutDetaching($attachData);
+
+            // 3) (Opcional) Si vino un link manual desde admin, guardarlo SOLO en la 1ra sesión
+            //    Si quieres guardarlo en todas, me dices y lo cambiamos.
             $calendarUrlFromAdmin = $validated['calendar_url'] ?? null;
+            if ($calendarUrlFromAdmin && Schema::hasColumn('class_sessions', 'calendar_url')) {
+                $first = $sessions->first();
+                $first->calendar_url = $calendarUrlFromAdmin;
+                $first->save();
+            }
 
-            // Si aceptas: adjuntar TODAS las sesiones del grupo al booking
-            if ($booking->status === 'accepted' && $class) {
-                $groupCode = $class->group_code ?? null;
-
-                $sessions = !empty($groupCode)
-                    ? ClassSession::where('group_code', $groupCode)->orderBy('date_iso')->get()
-                    : collect([$class]);
-
-                $attachData = [];
+            // 4) (Opcional) Si es Online, intenta generar Meet y guardar calendar_url por sesión
+            if (Schema::hasColumn('class_sessions', 'calendar_url')) {
                 foreach ($sessions as $s) {
-                    $attachData[$s->id] = ['attended' => null];
-                }
-
-                $booking->sessions()->syncWithoutDetaching($attachData);
-
-                // Primera sesión del grupo para el correo
-                $class = $sessions->first() ?? $class;
-            }
-
-            // Guardar link manual si vino
-            if ($class && $calendarUrlFromAdmin && Schema::hasColumn('class_sessions', 'calendar_url')) {
-                $class->calendar_url = $calendarUrlFromAdmin;
-                $class->save();
-            }
-
-            // Auto Meet si no hay link y es Online
-            if (
-                $booking->status === 'accepted'
-                && $class
-                && Schema::hasColumn('class_sessions', 'calendar_url')
-                && empty($class->calendar_url)
-                && (empty($class->modality) || $class->modality === 'Online')
-            ) {
-                try {
-                    $generatedUrl = GoogleMeetService::ensureSessionEvent($class);
-                    if (!empty($generatedUrl)) {
-                        $class->calendar_url = $generatedUrl;
-                        $class->save();
+                    if (empty($s->calendar_url) && (empty($s->modality) || $s->modality === 'Online')) {
+                        try {
+                            $generatedUrl = GoogleMeetService::ensureSessionEvent($s);
+                            if (!empty($generatedUrl)) {
+                                $s->calendar_url = $generatedUrl;
+                                $s->save();
+                            }
+                        } catch (\Throwable $e) {
+                            Log::warning('updateStatus(): ensureSessionEvent failed', [
+                                'booking_id' => $booking->id,
+                                'class_session_id' => $s->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
                     }
-                } catch (\Throwable $e) {
-                    Log::warning('updateStatus(): ensureSessionEvent failed', [
-                        'booking_id' => $booking->id,
-                        'class_id' => $class->id ?? null,
-                        'error' => $e->getMessage(),
-                    ]);
                 }
             }
 
-            $finalCalendarUrl = null;
-            if ($class && Schema::hasColumn('class_sessions', 'calendar_url') && !empty($class->calendar_url)) {
-                $finalCalendarUrl = $class->calendar_url;
-            } else {
-                $finalCalendarUrl = $calendarUrlFromAdmin;
+            // 5) Construir array para el email (sessions con calendar_url)
+            $sessionsForEmail = $sessions
+                ->sortBy(fn($s) => ($s->date_iso ?? '') . '|' . ($s->time_range ?? ''))
+                ->map(function ($s) use ($booking) {
+
+                    $url = !empty($s->calendar_url)
+                        ? $s->calendar_url
+                        : \App\Support\GoogleCalendarLink::build(
+                            title: $s->title ?? $booking->name ?? 'Training Session',
+                            dateIso: $s->date_iso,
+                            timeRange: $s->time_range ?? '',
+                            details: "Trainer: " . ($booking->trainer_name ?? '—')
+                            . "\nBooking ID: {$booking->id}\nNotes: " . ($booking->notes ?? ''),
+                            location: $s->modality ?? null,
+                            tz: 'America/Bogota'
+                        );
+
+                    return [
+                        'session_id' => $s->id,
+                        'title' => $s->title ?? $booking->name ?? 'Training Session',
+                        'date_iso' => $s->date_iso,
+                        'time_range' => $s->time_range ?? '—',
+                        'trainer_name' => $booking->trainer_name,
+                        'modality' => $s->modality ?? null,
+                        'calendar_url' => $url,
+                    ];
+                })
+                ->values()
+                ->toArray();
+
+            // 6) Enviar email al usuario con sessions
+            try {
+                $htmlUser = View::make('emails.class_accepted', [
+                    'booking' => $booking,
+                    'sessions' => $sessionsForEmail,
+                ])->render();
+
+                GoogleScriptMailer::send(
+                    $booking->email,
+                    $booking->name,
+                    '✅ Your class has been confirmed',
+                    $htmlUser,
+                    'Your class has been confirmed.'
+                );
+            } catch (\Throwable $e) {
+                Log::warning('updateStatus(): user email failed', [
+                    'booking_id' => $booking->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
 
-            // Email solo al aceptar (best-effort)
-            if ($booking->status === 'accepted' && $class) {
-                try {
-                    $htmlUser = View::make('emails.class_accepted', [
+            // 7) Email al trainer (si quieres: también con sessions)
+            try {
+                $trainerEmail = $this->getTrainerEmail($booking->trainer_name);
+                if ($trainerEmail) {
+                    $htmlTrainer = View::make('emails.trainer_class_accepted', [
                         'booking' => $booking,
-                        'class' => $class,
-                        'calendarUrl' => $finalCalendarUrl,
+                        'sessions' => $sessionsForEmail,
                     ])->render();
 
                     GoogleScriptMailer::send(
-                        $booking->email,
-                        $booking->name,
-                        '✅ Your class has been confirmed',
-                        $htmlUser,
-                        'Your class has been confirmed.'
+                        $trainerEmail,
+                        $booking->trainer_name ?? 'Trainer',
+                        'New training session assigned',
+                        $htmlTrainer,
+                        'New training session assigned.'
                     );
-                } catch (\Throwable $e) {
-                    Log::warning('updateStatus(): user email failed', [
-                        'booking_id' => $booking->id,
-                        'error' => $e->getMessage(),
-                    ]);
                 }
-
-                try {
-                    $trainerEmail = $this->getTrainerEmail($class->trainer_name);
-                    if ($trainerEmail) {
-                        $htmlTrainer = View::make('emails.trainer_class_accepted', [
-                            'booking' => $booking,
-                            'class' => $class,
-                            'calendarUrl' => $finalCalendarUrl,
-                        ])->render();
-
-                        GoogleScriptMailer::send(
-                            $trainerEmail,
-                            $class->trainer_name ?? 'Trainer',
-                            'New training session assigned',
-                            $htmlTrainer,
-                            'New training session assigned.'
-                        );
-                    }
-                } catch (\Throwable $e) {
-                    Log::warning('updateStatus(): trainer email failed', [
-                        'booking_id' => $booking->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
+            } catch (\Throwable $e) {
+                Log::warning('updateStatus(): trainer email failed', [
+                    'booking_id' => $booking->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
 
-            $booking->setAttribute('calendar_url', $finalCalendarUrl);
+            // (Opcional) para que el FE lo muestre
+            $booking->load('sessions');
+            $booking->setAttribute('sessions_for_email', $sessionsForEmail);
 
             return response()->json([
                 'ok' => true,
@@ -434,7 +474,7 @@ class BookingController extends Controller
 
             $all = $q->get()->values();
 
-            $idx = $all->search(fn ($s) => (int) $s->id === (int) $session->id);
+            $idx = $all->search(fn($s) => (int) $s->id === (int) $session->id);
             $next = ($idx !== false) ? $all->get($idx + 1) : null;
 
             if (!$next) {
