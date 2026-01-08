@@ -431,63 +431,109 @@ class BookingController extends Controller
      * IMPORTANTE: Esto asume que tu Booking tiene relación sessions() (belongsToMany)
      * y pivot booking_sessions.attended.
      */
+    use Illuminate\Support\Facades\Log;
+    use Illuminate\Support\Facades\View;
+    use App\Services\GoogleMeetService;
+    use App\Services\GoogleScriptMailer;
+
     public function setSessionAttendance(Request $request, Booking $booking, ClassSession $session)
     {
+        // 0) Validación
+        $validated = $request->validate([
+            'attended' => 'nullable|boolean',
+        ]);
+
+        // ⚠️ OJO: si por alguna razón no viene la key (raro), la tratamos como null
+        $attended = array_key_exists('attended', $validated) ? $validated['attended'] : null;
+
         try {
-            $validated = $request->validate([
-                'attended' => 'nullable|boolean',
-            ]);
-
-            // 1) Guardar en pivot (sin DB::table)
+            // 1) Guardar pivot SIEMPRE (esto NO debe fallar)
             $booking->sessions()->syncWithoutDetaching([
-                $session->id => ['attended' => $validated['attended']]
+                $session->id => ['attended' => $attended],
             ]);
-
-            // 2) Si attended === true => buscar siguiente sesión y enviar correo con link
-            if ($validated['attended'] === true) {
-
-                $all = $booking->sessions()
-                    ->orderBy('date_iso')
-                    ->orderBy('time_range')
-                    ->get()
-                    ->values();
-
-                $idx = $all->search(fn($s) => $s->id === $session->id);
-                $next = ($idx !== false) ? $all->get($idx + 1) : null;
-
-                if ($next) {
-                    $calendarUrl = GoogleMeetService::ensureSessionEvent($next);
-
-                    $htmlUser = View::make('emails.class_accepted', [
-                        'booking' => $booking,
-                        'class' => $next,
-                        'calendarUrl' => $calendarUrl,
-                    ])->render();
-
-                    GoogleScriptMailer::send(
-                        $booking->email,
-                        $booking->name,
-                        '✅ Next session unlocked',
-                        $htmlUser,
-                        'Your next session has been unlocked.'
-                    );
-                }
-            }
-
-            return response()->json(['ok' => true]);
         } catch (\Throwable $e) {
-            Log::error('Error en setSessionAttendance', [
-                'booking_id' => $booking->id ?? null,
-                'session_id' => $session->id ?? null,
+            Log::error('Pivot sync failed in setSessionAttendance', [
+                'booking_id' => $booking->id,
+                'session_id' => $session->id,
+                'attended' => $attended,
                 'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'ok' => false,
-                'message' => 'Server error updating session attendance.',
+                'message' => 'Could not update attendance in DB.',
             ], 500);
         }
+
+        // 2) Si NO es true, no desbloqueamos nada y devolvemos ok
+        if ($attended !== true) {
+            return response()->json(['ok' => true]);
+        }
+
+        // 3) Buscar siguiente sesión (y si falla esto, NO tumba el endpoint)
+        try {
+            $all = $booking->sessions()
+                ->orderBy('date_iso')
+                ->orderBy('time_range') // si no existe, cámbialo por start_time
+                ->get()
+                ->values();
+
+            $idx = $all->search(fn($s) => $s->id === $session->id);
+            $next = ($idx !== false) ? $all->get($idx + 1) : null;
+
+            if (!$next) {
+                return response()->json(['ok' => true]);
+            }
+
+            // 4) Intentar generar link + enviar correo (best effort)
+            $calendarUrl = null;
+
+            try {
+                $calendarUrl = GoogleMeetService::ensureSessionEvent($next);
+            } catch (\Throwable $e) {
+                Log::warning('Meet generation failed (ensureSessionEvent)', [
+                    'booking_id' => $booking->id,
+                    'next_session_id' => $next->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            try {
+                $htmlUser = View::make('emails.class_accepted', [
+                    'booking' => $booking,
+                    'class' => $next,
+                    'calendarUrl' => $calendarUrl,
+                ])->render();
+
+                GoogleScriptMailer::send(
+                    $booking->email,
+                    $booking->name,
+                    '✅ Next session unlocked',
+                    $htmlUser,
+                    'Your next session has been unlocked.'
+                );
+            } catch (\Throwable $e) {
+                Log::warning('Email send failed (GoogleScriptMailer)', [
+                    'booking_id' => $booking->id,
+                    'next_session_id' => $next->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            return response()->json(['ok' => true]);
+
+        } catch (\Throwable $e) {
+            Log::warning('Unlock logic failed after pivot was saved', [
+                'booking_id' => $booking->id,
+                'session_id' => $session->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            // ✅ IMPORTANTE: pivot ya se guardó, así que respondemos ok para no romper el toggle
+            return response()->json(['ok' => true]);
+        }
     }
+
 
     // ==================== (LEGACY) ADMIN: ASISTENCIA POR BOOKING ====================
     // Te lo dejo para no romper tu AdminPanel actual, pero NO lo uses para el flujo por sesión.
