@@ -3,61 +3,56 @@
 namespace App\Mail;
 
 use App\Models\Booking;
-use App\Models\ClassSession;
-use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
+use App\Support\GoogleCalendarLink;
 
 class ClassAcceptedMail extends Mailable
 {
     use Queueable, SerializesModels;
 
     public Booking $booking;
-    public ClassSession $class;
-    public ?string $calendarUrl; // 👈 ahora puede ser null
 
-    /**
-     * @param string|null $calendarUrl  Link que viene del admin (popup) o null
-     */
-    public function __construct(Booking $booking, ClassSession $class, ?string $calendarUrl = null)
+    /** Lista de sesiones con su link */
+    public array $sessionCalendarLinks = [];
+
+    public function __construct(Booking $booking)
     {
         $this->booking = $booking;
-        $this->class = $class;
 
-        // 1) Si el admin mandó calendarUrl desde el panel, usamos ese
-        if (!empty($calendarUrl)) {
-            $this->calendarUrl = $calendarUrl;
-            return;
-        }
+        // ✅ Traer sesiones (pivot)
+        $booking->load('sessions');
 
-        // 2) Si la clase ya tiene calendar_url guardado en BD, usarlo
-        if (!empty($class->calendar_url)) {
-            $this->calendarUrl = $class->calendar_url;
-            return;
-        }
+        // ✅ Construir links por sesión
+        $this->sessionCalendarLinks = collect($booking->sessions ?? [])
+            ->sortBy(fn ($s) => ($s->date_iso ?? '') . '|' . ($s->time_range ?? ''))
+            ->map(function ($s) use ($booking) {
 
-        // 3) Si no hay nada, generamos un link de Google Calendar como fallback
-        $startTime = null;
-        $endTime = null;
+                // 1) Si la sesión ya tiene calendar_url guardado, úsalo
+                $url = !empty($s->calendar_url)
+                    ? $s->calendar_url
+                    : GoogleCalendarLink::build(
+                        title: $s->title ?? $booking->name ?? 'Training Session',
+                        dateIso: $s->date_iso,
+                        timeRange: $s->time_range ?? '',
+                        details: "Trainer: " . ($booking->trainer_name ?? '—') . "\nBooking ID: {$booking->id}\nNotes: " . ($booking->notes ?? ''),
+                        location: $s->modality ?? null,
+                        tz: 'America/Bogota'
+                    );
 
-        if ($class->time_range && str_contains($class->time_range, '-')) {
-            [$startTime, $endTime] = array_map('trim', explode('-', $class->time_range));
-        }
-
-        $start = Carbon::parse($class->date_iso . ' ' . $startTime, 'America/Bogota');
-        $end = Carbon::parse($class->date_iso . ' ' . $endTime, 'America/Bogota');
-
-        // Formato para Google Calendar YYYYMMDDTHHMMSSZ
-        $startStr = $start->copy()->setTimezone('UTC')->format('Ymd\THis\Z');
-        $endStr = $end->copy()->setTimezone('UTC')->format('Ymd\THis\Z');
-
-        $this->calendarUrl =
-            'https://calendar.google.com/calendar/render?action=TEMPLATE'
-            . '&text=' . urlencode($class->title)
-            . '&dates=' . $startStr . '/' . $endStr
-            . '&details=' . urlencode("Trainer: {$class->trainer_name}\nNotas: {$booking->notes}")
-            . '&location=' . urlencode($class->modality === 'Online' ? 'Online' : 'Presencial');
+                return [
+                    'session_id'   => $s->id,
+                    'title'        => $s->title ?? $booking->name ?? 'Training Session',
+                    'date_iso'     => $s->date_iso,
+                    'time_range'   => $s->time_range ?? '—',
+                    'trainer_name' => $booking->trainer_name,
+                    'modality'     => $s->modality ?? null,
+                    'calendar_url' => $url,
+                ];
+            })
+            ->values()
+            ->toArray();
     }
 
     public function build()
@@ -65,9 +60,8 @@ class ClassAcceptedMail extends Mailable
         return $this->subject('✅ Tu clase ha sido confirmada')
             ->view('emails.class_accepted')
             ->with([
-                'booking'     => $this->booking,
-                'class'       => $this->class,
-                'calendarUrl' => $this->calendarUrl, // puede ser null, el blade lo maneja
+                'booking' => $this->booking,
+                'sessions' => $this->sessionCalendarLinks,
             ]);
     }
 }
