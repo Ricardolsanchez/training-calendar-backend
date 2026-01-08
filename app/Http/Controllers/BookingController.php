@@ -72,6 +72,8 @@ class BookingController extends Controller
         $bookingData = $validated;
         $bookingData['class_id'] = $validated['class_id'] ?? ($class->id ?? null);
 
+        $bookingData['group_code'] = $class->group_code ?? null;
+
         $booking = Booking::create($bookingData);
 
         $class->spots_left = (int) $class->spots_left - 1;
@@ -247,13 +249,13 @@ class BookingController extends Controller
 
             $validated = $request->validate([
                 'status' => 'required|in:accepted,denied',
-                'calendar_url' => 'nullable|string|max:2048', // si quieres dejar un link manual
+                'calendar_url' => 'nullable|string|max:2048', // link manual opcional (admin)
             ]);
 
             $booking->status = $validated['status'];
             $booking->save();
 
-            // Si NO aceptó, no hacemos attach ni emails
+            // ✅ Si NO aceptó, no hacemos attach ni emails
             if ($booking->status !== 'accepted') {
                 return response()->json([
                     'ok' => true,
@@ -262,7 +264,9 @@ class BookingController extends Controller
                 ]);
             }
 
-            // 1) Traer sesiones del grupo
+            // =========================================================
+            // 1) Resolver sesiones del grupo (PRIORIDAD: booking.group_code)
+            // =========================================================
             $sessions = collect();
 
             if (!empty($booking->group_code)) {
@@ -272,7 +276,10 @@ class BookingController extends Controller
                     ->get();
             }
 
-            // Fallback (por si booking no trae group_code)
+            // =========================================================
+            // 2) Fallback: buscar sesión base y si tiene group_code, úsalo
+            //    (también guarda booking.group_code para no perderlo)
+            // =========================================================
             if ($sessions->isEmpty()) {
                 $base = !empty($booking->class_id)
                     ? ClassSession::find($booking->class_id)
@@ -281,7 +288,19 @@ class BookingController extends Controller
                         ->first();
 
                 if ($base) {
-                    $sessions = collect([$base]);
+                    // ✅ Backup clave: setear group_code en booking si venía vacío
+                    if (empty($booking->group_code) && !empty($base->group_code)) {
+                        $booking->group_code = $base->group_code;
+                        $booking->save();
+                    }
+
+                    // ✅ Si base tiene group_code, trae TODO el grupo; si no, solo base
+                    $sessions = !empty($base->group_code)
+                        ? ClassSession::where('group_code', $base->group_code)
+                            ->orderBy('date_iso')
+                            ->orderBy('time_range')
+                            ->get()
+                        : collect([$base]);
                 }
             }
 
@@ -292,23 +311,30 @@ class BookingController extends Controller
                 ], 422);
             }
 
-            // 2) Adjuntar al booking (pivot attended = null)
+            // =========================================================
+            // 3) Adjuntar TODAS las sesiones al booking (pivot attended = null)
+            // =========================================================
             $attachData = [];
             foreach ($sessions as $s) {
                 $attachData[$s->id] = ['attended' => null];
             }
             $booking->sessions()->syncWithoutDetaching($attachData);
 
-            // 3) (Opcional) Si vino un link manual desde admin, guardarlo SOLO en la 1ra sesión
-            //    Si quieres guardarlo en todas, me dices y lo cambiamos.
+            // =========================================================
+            // 4) Guardar link manual si vino (solo en 1ra sesión)
+            // =========================================================
             $calendarUrlFromAdmin = $validated['calendar_url'] ?? null;
             if ($calendarUrlFromAdmin && Schema::hasColumn('class_sessions', 'calendar_url')) {
                 $first = $sessions->first();
-                $first->calendar_url = $calendarUrlFromAdmin;
-                $first->save();
+                if ($first) {
+                    $first->calendar_url = $calendarUrlFromAdmin;
+                    $first->save();
+                }
             }
 
-            // 4) (Opcional) Si es Online, intenta generar Meet y guardar calendar_url por sesión
+            // =========================================================
+            // 5) Si es Online, generar Meet por sesión (best-effort)
+            // =========================================================
             if (Schema::hasColumn('class_sessions', 'calendar_url')) {
                 foreach ($sessions as $s) {
                     if (empty($s->calendar_url) && (empty($s->modality) || $s->modality === 'Online')) {
@@ -329,7 +355,9 @@ class BookingController extends Controller
                 }
             }
 
-            // 5) Construir array para el email (sessions con calendar_url)
+            // =========================================================
+            // 6) Construir array para el email (sesiones con calendar_url o fallback link)
+            // =========================================================
             $sessionsForEmail = $sessions
                 ->sortBy(fn($s) => ($s->date_iso ?? '') . '|' . ($s->time_range ?? ''))
                 ->map(function ($s) use ($booking) {
@@ -359,7 +387,9 @@ class BookingController extends Controller
                 ->values()
                 ->toArray();
 
-            // 6) Enviar email al usuario con sessions
+            // =========================================================
+            // 7) Email al usuario (best-effort)
+            // =========================================================
             try {
                 $htmlUser = View::make('emails.class_accepted', [
                     'booking' => $booking,
@@ -380,7 +410,9 @@ class BookingController extends Controller
                 ]);
             }
 
-            // 7) Email al trainer (si quieres: también con sessions)
+            // =========================================================
+            // 8) Email al trainer (best-effort)
+            // =========================================================
             try {
                 $trainerEmail = $this->getTrainerEmail($booking->trainer_name);
                 if ($trainerEmail) {
@@ -404,7 +436,9 @@ class BookingController extends Controller
                 ]);
             }
 
-            // (Opcional) para que el FE lo muestre
+            // =========================================================
+            // 9) Respuesta: cargar sesiones + exponer sessions_for_email (opcional)
+            // =========================================================
             $booking->load('sessions');
             $booking->setAttribute('sessions_for_email', $sessionsForEmail);
 
@@ -425,7 +459,6 @@ class BookingController extends Controller
             ], 500);
         }
     }
-
     /**
      * ✅ Attendance POR SESIÓN (pivot)
      * - Guarda SIEMPRE el pivot
