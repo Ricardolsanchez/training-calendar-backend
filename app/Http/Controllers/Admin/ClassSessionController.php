@@ -111,8 +111,8 @@ class ClassSessionController extends Controller
         $validated = $request->validate([
             'title' => 'required|string',
             'trainer_name' => 'required|string',
-            'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
             'start_time' => 'required',
             'end_time' => 'required',
             'modality' => 'required|in:Online,Presencial',
@@ -124,8 +124,8 @@ class ClassSessionController extends Controller
         $class = new ClassSession();
         $class->title = $validated['title'];
         $class->trainer_name = $validated['trainer_name'];
-        $class->date_iso = $validated['start_date'];
-        $class->end_date_iso = $validated['end_date'];
+        $class->date_iso = $validated['start_date'] ?? now()->toDateString();
+        $class->end_date_iso = $validated['end_date'] ?? ($validated['start_date'] ?? $class->date_iso);
         $class->time_range = $validated['start_time'] . ' - ' . $validated['end_time'];
         $class->modality = $validated['modality'];
         $class->level = 'General';
@@ -207,8 +207,8 @@ class ClassSessionController extends Controller
         $validated = $request->validate([
             'title' => 'required|string',
             'trainer_name' => 'required|string',
-            'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
             'start_time' => 'required',
             'end_time' => 'required',
             'modality' => 'required|in:Online,Presencial',
@@ -219,8 +219,12 @@ class ClassSessionController extends Controller
 
         $class->title = $validated['title'];
         $class->trainer_name = $validated['trainer_name'];
-        $class->date_iso = $validated['start_date'];
-        $class->end_date_iso = $validated['end_date'];
+        if (!empty($validated['start_date'])) {
+            $class->date_iso = $validated['start_date'];
+        }
+        if (!empty($validated['end_date'])) {
+            $class->end_date_iso = $validated['end_date'];
+        }
         $class->time_range = $validated['start_time'] . ' - ' . $validated['end_time'];
         $class->modality = $validated['modality'];
         $class->level = 'General';
@@ -289,7 +293,9 @@ class ClassSessionController extends Controller
             ->map(fn($v) => (int) $v)
             ->values();
 
-        $workdayUrl = $validated['workday_url'] ?? null;
+        $workdayUrl = array_key_exists('workday_url', $validated)
+            ? ($validated['workday_url'] ?: null)
+            : $base->workday_url;
 
         return DB::transaction(function () use ($validated, $base, $groupCode, $incomingIds, $rangeStart, $rangeEnd, $workdayUrl) {
 
