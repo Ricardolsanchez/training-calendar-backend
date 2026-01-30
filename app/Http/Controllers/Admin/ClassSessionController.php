@@ -49,6 +49,8 @@ class ClassSessionController extends Controller
                     'spots_left' => $cls->spots_left,
                     'description' => $cls->description,
 
+                    'workday_url' => $cls->workday_url ?? null, // ✅ NUEVO
+
                     'group_code' => $cls->group_code ?? null,
                 ];
             }),
@@ -93,6 +95,8 @@ class ClassSessionController extends Controller
                     'spots_left' => $cls->spots_left,
                     'description' => $cls->description,
 
+                    'workday_url' => $cls->workday_url ?? null, // ✅ NUEVO
+
                     'group_code' => $cls->group_code ?? null,
                 ];
             }),
@@ -114,6 +118,7 @@ class ClassSessionController extends Controller
             'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
+            'workday_url' => 'nullable|string|max:2000', // ✅ NUEVO (string para no bloquear URLs raras)
         ]);
 
         $class = new ClassSession();
@@ -126,6 +131,8 @@ class ClassSessionController extends Controller
         $class->level = 'General';
         $class->spots_left = $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
+
+        $class->workday_url = $validated['workday_url'] ?? null; // ✅ NUEVO
 
         // group_code inicial
         $class->group_code = (string) Str::uuid();
@@ -164,6 +171,9 @@ class ClassSessionController extends Controller
                 ];
             })->values();
 
+            // ✅ toma el primer workday_url no vacío del grupo
+            $workdayUrl = $items->pluck('workday_url')->filter()->first();
+
             return [
                 'group_code' => $groupCode,
                 'title' => $first->title,
@@ -171,6 +181,8 @@ class ClassSessionController extends Controller
                 'modality' => $first->modality,
                 'level' => $first->level,
                 'description' => $first->description,
+
+                'workday_url' => $workdayUrl ?? null, // ✅ NUEVO
 
                 // ✅ rango real
                 'start_date_iso' => $minDate,
@@ -202,6 +214,7 @@ class ClassSessionController extends Controller
             'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
+            'workday_url' => 'nullable|string|max:2000', // ✅ NUEVO
         ]);
 
         $class->title = $validated['title'];
@@ -213,6 +226,8 @@ class ClassSessionController extends Controller
         $class->level = 'General';
         $class->spots_left = $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
+
+        $class->workday_url = $validated['workday_url'] ?? $class->workday_url; // ✅ NUEVO
 
         if (!$class->group_code) {
             $class->group_code = (string) Str::uuid();
@@ -241,6 +256,7 @@ class ClassSessionController extends Controller
      * - Actualiza base con ese rango
      * - Actualiza/crea sesiones
      * - NO borra todo si no vienen IDs
+     * - ✅ Propaga workday_url a todo el grupo
      */
     public function syncSessions(Request $request, $id)
     {
@@ -252,6 +268,7 @@ class ClassSessionController extends Controller
             'sessions.*.date_iso' => 'required|date',
             'sessions.*.start_time' => 'required|string',
             'sessions.*.end_time' => 'required|string',
+            'workday_url' => 'nullable|string|max:2000', // ✅ string para no bloquear
         ]);
 
         if (!$base->group_code) {
@@ -272,7 +289,9 @@ class ClassSessionController extends Controller
             ->map(fn ($v) => (int) $v)
             ->values();
 
-        return DB::transaction(function () use ($validated, $base, $groupCode, $incomingIds, $rangeStart, $rangeEnd) {
+        $workdayUrl = $validated['workday_url'] ?? null;
+
+        return DB::transaction(function () use ($validated, $base, $groupCode, $incomingIds, $rangeStart, $rangeEnd, $workdayUrl) {
 
             // ✅ delete seguro: solo si hay IDs (y nunca borres la base)
             if ($incomingIds->isNotEmpty()) {
@@ -287,9 +306,8 @@ class ClassSessionController extends Controller
             $base->date_iso = $rangeStart;
             $base->end_date_iso = $rangeEnd;
             $base->time_range = $first['start_time'] . ' - ' . $first['end_time'];
+            $base->workday_url = $workdayUrl; // ✅ NUEVO
             $base->save();
-
-            $saved = [];
 
             foreach ($validated['sessions'] as $s) {
                 $timeRange = $s['start_time'] . ' - ' . $s['end_time'];
@@ -303,6 +321,7 @@ class ClassSessionController extends Controller
                     $row->level = $base->level ?? 'General';
                     $row->spots_left = $base->spots_left;
                     $row->description = $base->description;
+                    $row->workday_url = $workdayUrl; // ✅ NUEVO
 
                     $row->date_iso = $s['date_iso'];
                     $row->end_date_iso = $rangeEnd; // opcional, para consistencia
@@ -310,9 +329,8 @@ class ClassSessionController extends Controller
                     $row->group_code = $groupCode;
 
                     $row->save();
-                    $saved[] = $row;
                 } else {
-                    $saved[] = ClassSession::create([
+                    ClassSession::create([
                         'title' => $base->title,
                         'trainer_name' => $base->trainer_name,
                         'date_iso' => $s['date_iso'],
@@ -322,6 +340,7 @@ class ClassSessionController extends Controller
                         'level' => $base->level ?? 'General',
                         'spots_left' => $base->spots_left,
                         'description' => $base->description,
+                        'workday_url' => $workdayUrl, // ✅ NUEVO
                         'group_code' => $groupCode,
                     ]);
                 }
@@ -338,6 +357,7 @@ class ClassSessionController extends Controller
                 'range' => ['start' => $rangeStart, 'end' => $rangeEnd],
                 'sessions_count' => $fresh->count(),
                 'sessions' => $fresh,
+                'workday_url' => $fresh->pluck('workday_url')->filter()->first(), // ✅ útil para front
             ]);
         });
     }

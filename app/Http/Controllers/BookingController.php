@@ -114,17 +114,16 @@ class BookingController extends Controller
         $user = $request->user();
 
         if (!$user || !$user->is_admin) {
-            return response()->json([
-                'ok' => false,
-                'message' => 'No autorizado',
-            ], 403);
+            return response()->json(['ok' => false, 'message' => 'No autorizado'], 403);
         }
 
-        $bookings = Booking::with([
+        $perPage = (int) $request->query('per_page', 10);
+        $perPage = max(1, min(50, $perPage)); // límite de seguridad
+
+        $paginator = Booking::with([
             'sessions' => function ($q) {
-                // orden seguro: date_iso + (start_time si existe) + time_range fallback
                 $q->orderBy('date_iso');
-                if (Schema::hasColumn('class_sessions', 'start_time')) {
+                if (\Illuminate\Support\Facades\Schema::hasColumn('class_sessions', 'start_time')) {
                     $q->orderBy('start_time');
                 } else {
                     $q->orderBy('time_range');
@@ -132,10 +131,10 @@ class BookingController extends Controller
             }
         ])
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->paginate($perPage);
 
-        // Asegurar attended en el JSON sin depender de pivot en FE
-        $bookings->transform(function (Booking $b) {
+        // ✅ asegurar attended en el JSON
+        $paginator->getCollection()->transform(function (\App\Models\Booking $b) {
             if ($b->relationLoaded('sessions')) {
                 $b->sessions->transform(function ($s) {
                     $s->attended = $s->pivot->attended ?? null;
@@ -148,7 +147,14 @@ class BookingController extends Controller
         return response()->json([
             'ok' => true,
             'message' => 'Listado de reservas',
-            'bookings' => $bookings,
+            'bookings' => $paginator->items(),
+            'pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'last_page' => $paginator->lastPage(),
+                'total' => $paginator->total(),
+                'has_more' => $paginator->hasMorePages(),
+            ],
         ]);
     }
 

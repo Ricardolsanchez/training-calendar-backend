@@ -22,6 +22,7 @@ class ClassSession extends Model
         'spots_left',
         'description',
         'group_code',
+        'workday_url',
     ];
 
     // Opcional (recomendado):
