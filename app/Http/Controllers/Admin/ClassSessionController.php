@@ -50,7 +50,7 @@ class ClassSessionController extends Controller
                     'description' => $cls->description,
 
                     'workday_url' => $cls->workday_url ?? null, // ✅ NUEVO
-
+    
                     'group_code' => $cls->group_code ?? null,
                 ];
             }),
@@ -96,7 +96,7 @@ class ClassSessionController extends Controller
                     'description' => $cls->description,
 
                     'workday_url' => $cls->workday_url ?? null, // ✅ NUEVO
-
+    
                     'group_code' => $cls->group_code ?? null,
                 ];
             }),
@@ -227,7 +227,7 @@ class ClassSessionController extends Controller
         $class->spots_left = $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
 
-        $class->workday_url = $validated['workday_url'] ?? $class->workday_url; // ✅ NUEVO
+        $class->workday_url = $validated['workday_url'] ?? null; // ✅ NUEVO
 
         if (!$class->group_code) {
             $class->group_code = (string) Str::uuid();
@@ -286,7 +286,7 @@ class ClassSessionController extends Controller
         $incomingIds = collect($validated['sessions'])
             ->pluck('id')
             ->filter()
-            ->map(fn ($v) => (int) $v)
+            ->map(fn($v) => (int) $v)
             ->values();
 
         $workdayUrl = $validated['workday_url'] ?? null;
@@ -313,7 +313,9 @@ class ClassSessionController extends Controller
                 $timeRange = $s['start_time'] . ' - ' . $s['end_time'];
 
                 if (!empty($s['id'])) {
-                    $row = ClassSession::where('group_code', $groupCode)->findOrFail((int) $s['id']);
+                    $row = ClassSession::where('group_code', $groupCode)
+                        ->where('id', (int) $s['id'])
+                        ->firstOrFail();
 
                     $row->title = $base->title;
                     $row->trainer_name = $base->trainer_name;
