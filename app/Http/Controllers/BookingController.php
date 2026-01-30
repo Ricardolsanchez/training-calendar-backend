@@ -18,72 +18,118 @@ class BookingController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'class_id' => 'nullable|integer',
+            'class_id' => 'nullable|integer|exists:class_sessions,id',
+
+            // ✅ NUEVO: sesiones seleccionadas
+            'session_ids' => 'nullable|array|min:1',
+            'session_ids.*' => 'integer|exists:class_sessions,id',
+
             'name' => 'required|string|max:255',
             'email' => 'required|email',
             'notes' => 'nullable|string',
-            'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
             'trainer_name' => 'nullable|string|max:255',
-            'original_start_date' => 'nullable|date',
-            'original_end_date' => 'nullable|date',
-            'original_training_days' => 'nullable|integer|min:0',
-            'new_training_days' => 'nullable|integer|min:0',
+
+            // ⛔️ YA NO obligues start/end del front
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date',
         ]);
 
         $validated['status'] = 'pending';
 
-        $class = null;
+        // =========================================================
+        // 1) Resolver sesiones que el usuario quiere reservar
+        // =========================================================
+        $sessions = collect();
 
-        if (!empty($validated['class_id'])) {
-            $class = ClassSession::find($validated['class_id']);
-        } else {
-            $class = ClassSession::where('title', $validated['name'])
-                ->where('date_iso', $validated['start_date'])
-                ->first();
+        if (!empty($validated['session_ids'])) {
+            $sessions = ClassSession::whereIn('id', $validated['session_ids'])
+                ->orderBy('date_iso')
+                ->orderBy('time_range')
+                ->get();
+        } elseif (!empty($validated['class_id'])) {
+            $base = ClassSession::find($validated['class_id']);
+            if ($base) {
+                // si tiene group_code, reserva todo el grupo (si eso es tu regla)
+                $sessions = $base->group_code
+                    ? ClassSession::where('group_code', $base->group_code)
+                        ->orderBy('date_iso')
+                        ->orderBy('time_range')
+                        ->get()
+                    : collect([$base]);
+            }
         }
 
-        if (!$class) {
+        if ($sessions->isEmpty()) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Class is not available anymore.',
+                'message' => 'No sessions selected / class not found.',
             ], 422);
         }
 
+        // =========================================================
+        // 2) Calcular rango REAL desde DB
+        // =========================================================
+        $rangeStart = $sessions->min('date_iso');
+        $rangeEnd = $sessions->max('date_iso');
+
+        // =========================================================
+        // 3) Validar cupos (si tu regla es cupo por sesión)
+        // =========================================================
+        foreach ($sessions as $s) {
+            if ((int) $s->spots_left <= 0) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => "No seats left for session {$s->id} ({$s->date_iso}).",
+                ], 422);
+            }
+        }
+
+        // =========================================================
+        // 4) Evitar doble reserva (mejor por grupo + email)
+        // =========================================================
+        $groupCode = $sessions->first()->group_code ?? null;
+
         $alreadyBooked = Booking::where('email', $validated['email'])
-            ->where('name', $validated['name'])
-            ->where('start_date', $validated['start_date'])
+            ->where('group_code', $groupCode)
+            ->where('status', '!=', 'denied')
             ->exists();
 
         if ($alreadyBooked) {
             return response()->json([
                 'ok' => false,
-                'message' => 'You already have a reservation for this class.',
+                'message' => 'You already have a reservation for this class group.',
             ], 422);
         }
 
-        if ((int) $class->spots_left <= 0) {
-            return response()->json([
-                'ok' => false,
-                'message' => 'We’re sorry! We’ve run out of available seats for this class.',
-            ], 422);
+        // =========================================================
+        // 5) Crear booking con rango REAL + group_code
+        // =========================================================
+        $booking = Booking::create([
+            'class_id' => $sessions->first()->id,
+            'group_code' => $groupCode,
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'notes' => $validated['notes'] ?? null,
+            'trainer_name' => $validated['trainer_name'] ?? null,
+            'start_date' => $rangeStart,
+            'end_date' => $rangeEnd,
+            'status' => 'pending',
+        ]);
+
+        // =========================================================
+        // 6) Decrementar cupos por sesión seleccionada
+        // =========================================================
+        foreach ($sessions as $s) {
+            $s->spots_left = (int) $s->spots_left - 1;
+            $s->save();
         }
 
-        $bookingData = $validated;
-        $bookingData['class_id'] = $validated['class_id'] ?? ($class->id ?? null);
-
-        $bookingData['group_code'] = $class->group_code ?? null;
-
-        $booking = Booking::create($bookingData);
-
-        $class->spots_left = (int) $class->spots_left - 1;
-        $class->save();
-
-        // email "received" (best-effort)
+        // email best-effort (igual al tuyo, pero usa la sesión base)
         try {
+            $base = $sessions->first();
             $html = View::make('emails.class_booked', [
                 'booking' => $booking,
-                'classSession' => $class,
+                'classSession' => $base,
             ])->render();
 
             GoogleScriptMailer::send(
@@ -102,7 +148,7 @@ class BookingController extends Controller
 
         return response()->json([
             'ok' => true,
-            'message' => 'Reserva creada correctamente',
+            'message' => 'Booking created',
             'booking' => $booking,
         ], 201);
     }
