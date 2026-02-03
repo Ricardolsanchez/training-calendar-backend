@@ -21,6 +21,7 @@ return new class extends Migration
             ['id' => 4, 'name' => 'Edma Murillo'],
             ['id' => 5, 'name' => 'Dora Ramirez'],
             ['id' => 6, 'name' => 'Ada Perez'],
+            ['id' => 7, 'name'=> 'Alexandria Yorkman']
         ]);
     }
 

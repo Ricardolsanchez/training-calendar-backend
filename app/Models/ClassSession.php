@@ -23,6 +23,7 @@ class ClassSession extends Model
         'description',
         'group_code',
         'workday_url',
+        'audience', 
     ];
 
     // Opcional (recomendado):

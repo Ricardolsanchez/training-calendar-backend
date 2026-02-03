@@ -49,8 +49,9 @@ class ClassSessionController extends Controller
                     'spots_left' => $cls->spots_left,
                     'description' => $cls->description,
 
-                    'workday_url' => $cls->workday_url ?? null, // ✅ NUEVO
-    
+                    'workday_url' => $cls->workday_url ?? null,
+                    'audience' => $cls->audience ?? 'all_employees', // ✅ NUEVO
+
                     'group_code' => $cls->group_code ?? null,
                 ];
             }),
@@ -95,8 +96,9 @@ class ClassSessionController extends Controller
                     'spots_left' => $cls->spots_left,
                     'description' => $cls->description,
 
-                    'workday_url' => $cls->workday_url ?? null, // ✅ NUEVO
-    
+                    'workday_url' => $cls->workday_url ?? null,
+                    'audience' => $cls->audience ?? 'all_employees', // ✅ NUEVO
+
                     'group_code' => $cls->group_code ?? null,
                 ];
             }),
@@ -118,7 +120,8 @@ class ClassSessionController extends Controller
             'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
-            'workday_url' => 'nullable|string|max:2000', // ✅ NUEVO (string para no bloquear URLs raras)
+            'workday_url' => 'nullable|string|max:2000',
+            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal',
         ]);
 
         $class = new ClassSession();
@@ -132,7 +135,8 @@ class ClassSessionController extends Controller
         $class->spots_left = $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
 
-        $class->workday_url = $validated['workday_url'] ?? null; // ✅ NUEVO
+        $class->workday_url = $validated['workday_url'] ?? null;
+        $class->audience = $validated['audience'] ?? 'all_employees'; // ✅ NUEVO
 
         // group_code inicial
         $class->group_code = (string) Str::uuid();
@@ -180,9 +184,10 @@ class ClassSessionController extends Controller
                 'trainer_name' => $first->trainer_name,
                 'modality' => $first->modality,
                 'level' => $first->level,
+                'audience' => $first->audience ?? 'all_employees', // ✅ NUEVO
                 'description' => $first->description,
 
-                'workday_url' => $workdayUrl ?? null, // ✅ NUEVO
+                'workday_url' => $workdayUrl ?? null,
 
                 // ✅ rango real
                 'start_date_iso' => $minDate,
@@ -214,24 +219,28 @@ class ClassSessionController extends Controller
             'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
-            'workday_url' => 'nullable|string|max:2000', // ✅ NUEVO
+            'workday_url' => 'nullable|string|max:2000',
+            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal',
         ]);
 
         $class->title = $validated['title'];
         $class->trainer_name = $validated['trainer_name'];
+
         if (!empty($validated['start_date'])) {
             $class->date_iso = $validated['start_date'];
         }
         if (!empty($validated['end_date'])) {
             $class->end_date_iso = $validated['end_date'];
         }
+
         $class->time_range = $validated['start_time'] . ' - ' . $validated['end_time'];
         $class->modality = $validated['modality'];
         $class->level = 'General';
         $class->spots_left = $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
 
-        $class->workday_url = $validated['workday_url'] ?? null; // ✅ NUEVO
+        $class->workday_url = $validated['workday_url'] ?? null;
+        $class->audience = $validated['audience'] ?? 'all_employees'; // ✅ NUEVO
 
         if (!$class->group_code) {
             $class->group_code = (string) Str::uuid();
@@ -260,7 +269,7 @@ class ClassSessionController extends Controller
      * - Actualiza base con ese rango
      * - Actualiza/crea sesiones
      * - NO borra todo si no vienen IDs
-     * - ✅ Propaga workday_url a todo el grupo
+     * - ✅ Propaga workday_url + audience a todo el grupo
      */
     public function syncSessions(Request $request, $id)
     {
@@ -272,7 +281,8 @@ class ClassSessionController extends Controller
             'sessions.*.date_iso' => 'required|date',
             'sessions.*.start_time' => 'required|string',
             'sessions.*.end_time' => 'required|string',
-            'workday_url' => 'nullable|string|max:2000', // ✅ string para no bloquear
+            'workday_url' => 'nullable|string|max:2000',
+            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal',
         ]);
 
         if (!$base->group_code) {
@@ -290,15 +300,27 @@ class ClassSessionController extends Controller
         $incomingIds = collect($validated['sessions'])
             ->pluck('id')
             ->filter()
-            ->map(fn($v) => (int) $v)
+            ->map(fn ($v) => (int) $v)
             ->values();
 
         $workdayUrl = array_key_exists('workday_url', $validated)
             ? ($validated['workday_url'] ?: null)
             : $base->workday_url;
 
-        return DB::transaction(function () use ($validated, $base, $groupCode, $incomingIds, $rangeStart, $rangeEnd, $workdayUrl) {
+        $audience = array_key_exists('audience', $validated)
+            ? ($validated['audience'] ?: null)
+            : $base->audience;
 
+        return DB::transaction(function () use (
+            $validated,
+            $base,
+            $groupCode,
+            $incomingIds,
+            $rangeStart,
+            $rangeEnd,
+            $workdayUrl,
+            $audience
+        ) {
             // ✅ delete seguro: solo si hay IDs (y nunca borres la base)
             if ($incomingIds->isNotEmpty()) {
                 ClassSession::where('group_code', $groupCode)
@@ -312,7 +334,8 @@ class ClassSessionController extends Controller
             $base->date_iso = $rangeStart;
             $base->end_date_iso = $rangeEnd;
             $base->time_range = $first['start_time'] . ' - ' . $first['end_time'];
-            $base->workday_url = $workdayUrl; // ✅ NUEVO
+            $base->workday_url = $workdayUrl;
+            $base->audience = $audience ?? $base->audience ?? 'all_employees'; // ✅
             $base->save();
 
             foreach ($validated['sessions'] as $s) {
@@ -329,7 +352,8 @@ class ClassSessionController extends Controller
                     $row->level = $base->level ?? 'General';
                     $row->spots_left = $base->spots_left;
                     $row->description = $base->description;
-                    $row->workday_url = $workdayUrl; // ✅ NUEVO
+                    $row->workday_url = $workdayUrl;
+                    $row->audience = $base->audience; // ✅
 
                     $row->date_iso = $s['date_iso'];
                     $row->end_date_iso = $rangeEnd; // opcional, para consistencia
@@ -348,7 +372,8 @@ class ClassSessionController extends Controller
                         'level' => $base->level ?? 'General',
                         'spots_left' => $base->spots_left,
                         'description' => $base->description,
-                        'workday_url' => $workdayUrl, // ✅ NUEVO
+                        'workday_url' => $workdayUrl,
+                        'audience' => $base->audience, // ✅
                         'group_code' => $groupCode,
                     ]);
                 }
@@ -365,7 +390,8 @@ class ClassSessionController extends Controller
                 'range' => ['start' => $rangeStart, 'end' => $rangeEnd],
                 'sessions_count' => $fresh->count(),
                 'sessions' => $fresh,
-                'workday_url' => $fresh->pluck('workday_url')->filter()->first(), // ✅ útil para front
+                'workday_url' => $fresh->pluck('workday_url')->filter()->first(),
+                'audience' => $fresh->pluck('audience')->filter()->first() ?? 'all_employees', // ✅ útil para front
             ]);
         });
     }

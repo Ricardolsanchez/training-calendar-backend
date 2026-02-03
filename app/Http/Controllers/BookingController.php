@@ -280,6 +280,7 @@ class BookingController extends Controller
         $map = [
             'Sergio Osorio' => 'seosorio@alonsoalonsolaw.com',
             'Monica Mendoza' => 'mmendoza@alonsoalonsolaw.com',
+            'Alexandria Yorkman' => 'ayorkman@alonsoalonsolaw.com',
             'Kelvin Hodgson' => 'kelvinh@alonsoalonsolaw.com',
             'Edma Murillo' => 'emurillo@alonsoalonsolaw.com',
             'Dora Ramirez' => 'dramirez@alonsoalonsolaw.com',
