@@ -5,13 +5,13 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\ClassSession;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ClassSessionController extends Controller
 {
     /**
-     * LISTADO PARA ADMIN  (GET /api/admin/classes)
+     * LISTADO PARA ADMIN (GET /api/admin/classes)
      */
     public function index()
     {
@@ -19,7 +19,6 @@ class ClassSessionController extends Controller
 
         return response()->json([
             'classes' => $classes->map(function (ClassSession $cls) {
-
                 $startDate = $cls->date_iso;
                 $endDate = $cls->end_date_iso ?? $cls->date_iso;
 
@@ -53,7 +52,7 @@ class ClassSessionController extends Controller
                     'audience' => $cls->audience ?? 'all_employees',
                     'group_code' => $cls->group_code ?? null,
 
-                    // ✅ útil para admin
+                    // útil para admin
                     'is_draft' => ($cls->level === 'Draft'),
                 ];
             }),
@@ -61,8 +60,8 @@ class ClassSessionController extends Controller
     }
 
     /**
-     * LISTADO PÚBLICO DEL CALENDARIO (GET /api/classes)
-     * ✅ EXCLUYE Draft para no romper el calendario público
+     * LISTADO PÚBLICO (GET /api/classes)
+     * Excluye Draft
      */
     public function indexPublic()
     {
@@ -73,7 +72,6 @@ class ClassSessionController extends Controller
 
         return response()->json([
             'classes' => $classes->map(function (ClassSession $cls) {
-
                 $startDate = $cls->date_iso;
                 $endDate = $cls->end_date_iso ?? $cls->date_iso;
 
@@ -111,8 +109,8 @@ class ClassSessionController extends Controller
     }
 
     /**
-     * ✅ LISTADO ADMIN AGRUPADO (GET /api/admin/classes-grouped)
-     * Incluye Draft (sesiones 0)
+     * LISTADO ADMIN AGRUPADO (GET /api/admin/classes-grouped)
+     * Incluye Draft
      */
     public function indexAdminGrouped()
     {
@@ -125,7 +123,7 @@ class ClassSessionController extends Controller
 
     /**
      * LISTADO PÚBLICO AGRUPADO (GET /api/classes-grouped)
-     * ✅ EXCLUYE Draft para no romper el BookingCalendar
+     * Excluye Draft
      */
     public function indexPublicGrouped()
     {
@@ -149,20 +147,17 @@ class ClassSessionController extends Controller
         $classes = $grouped->map(function ($items, $groupCode) {
             $first = $items->first();
 
-            $isDraftGroup = $items->every(fn($x) => $x->level === 'Draft');
+            $isDraftGroup = $items->every(fn ($x) => $x->level === 'Draft');
 
-            // ✅ toma el primer workday_url no vacío del grupo
             $workdayUrl = $items->pluck('workday_url')->filter()->first();
-
-            // ✅ ids para borrar desde admin (incluye base + sesiones)
             $allIds = $items->pluck('id')->values()->all();
 
             if ($isDraftGroup) {
-                // ✅ draft: no hay sesiones reales
                 return [
                     'group_code' => $groupCode,
                     'base_id' => $first->id,
                     'all_session_ids' => $allIds,
+                    'is_draft' => true,
 
                     'title' => $first->title,
                     'trainer_name' => $first->trainer_name,
@@ -177,7 +172,6 @@ class ClassSessionController extends Controller
 
                     'sessions_count' => 0,
                     'sessions' => [],
-                    'is_draft' => true,
                 ];
             }
 
@@ -197,6 +191,7 @@ class ClassSessionController extends Controller
                 'group_code' => $groupCode,
                 'base_id' => $first->id,
                 'all_session_ids' => $allIds,
+                'is_draft' => false,
 
                 'title' => $first->title,
                 'trainer_name' => $first->trainer_name,
@@ -212,7 +207,6 @@ class ClassSessionController extends Controller
 
                 'sessions_count' => $sessions->count(),
                 'sessions' => $sessions,
-                'is_draft' => false,
             ];
         })->values();
 
@@ -221,20 +215,31 @@ class ClassSessionController extends Controller
 
     /**
      * CREAR CLASE (ADMIN – POST /api/admin/classes)
-     * ✅ permite Draft (sin sesiones => start_time/end_time null)
-     * ✅ pero SIEMPRE guarda time_range (NOT NULL en DB)
+     * Permite Draft:
+     * - si no hay start_time/end_time => Draft
+     * Nota: si tu DB tiene NOT NULL en time_range, guardamos '00:00 - 00:00'
      */
     public function store(Request $request)
     {
+        // Normaliza vacíos a null para evitar 422 por date_format
+        $request->merge([
+            'start_time' => $request->input('start_time') === '' ? null : $request->input('start_time'),
+            'end_time' => $request->input('end_time') === '' ? null : $request->input('end_time'),
+            'start_date' => $request->input('start_date') === '' ? null : $request->input('start_date'),
+            'end_date' => $request->input('end_date') === '' ? null : $request->input('end_date'),
+            'trainer_name' => $request->input('trainer_name') === '' ? null : $request->input('trainer_name'),
+        ]);
+
         $validated = $request->validate([
             'title' => 'required|string',
-            'trainer_name' => 'required|string',
 
-            // ✅ no obligamos fechas/horas si será draft
-            'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date|after_or_equal:start_date',
-            'start_time' => 'nullable|date_format:H:i',
-            'end_time' => 'nullable|date_format:H:i',
+            // ✅ para que no te dé 422 si aún no escogen trainer en draft
+            'trainer_name' => 'sometimes|nullable|string',
+
+            'start_date' => 'sometimes|nullable|date',
+            'end_date' => 'sometimes|nullable|date|after_or_equal:start_date',
+            'start_time' => 'sometimes|nullable|date_format:H:i',
+            'end_time' => 'sometimes|nullable|date_format:H:i',
 
             'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
@@ -248,20 +253,21 @@ class ClassSessionController extends Controller
 
         $class = new ClassSession();
         $class->title = $validated['title'];
-        $class->trainer_name = $validated['trainer_name'];
+        $class->trainer_name = $validated['trainer_name'] ?? null;
 
-        // ✅ si no hay start_date, usamos hoy (para cumplir NOT NULL de date_iso)
+        // si no hay start_date, usamos hoy para cumplir NOT NULL
         $class->date_iso = $validated['start_date'] ?? now()->toDateString();
         $class->end_date_iso = $validated['end_date'] ?? ($validated['start_date'] ?? $class->date_iso);
 
-        // ✅ NOT NULL siempre
+        // time_range siempre NOT NULL
         $class->time_range = $hasTimes
             ? ($validated['start_time'] . ' - ' . $validated['end_time'])
-            : ('00:00 - 00:00');
+            : '00:00 - 00:00';
 
         $class->modality = $validated['modality'];
         $class->level = $isDraft ? 'Draft' : 'General';
-        $class->spots_left = $validated['spots_left'];
+
+        $class->spots_left = (int) $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
 
         $class->workday_url = $validated['workday_url'] ?? null;
@@ -276,19 +282,29 @@ class ClassSessionController extends Controller
 
     /**
      * ACTUALIZAR CLASE (ADMIN – PUT /api/admin/classes/{id})
-     * ✅ permite dejar en Draft si no hay horas
+     * Permite Draft si no hay horas
      */
     public function update(Request $request, $id)
     {
         $class = ClassSession::findOrFail($id);
 
+        $request->merge([
+            'start_time' => $request->input('start_time') === '' ? null : $request->input('start_time'),
+            'end_time' => $request->input('end_time') === '' ? null : $request->input('end_time'),
+            'start_date' => $request->input('start_date') === '' ? null : $request->input('start_date'),
+            'end_date' => $request->input('end_date') === '' ? null : $request->input('end_date'),
+            'trainer_name' => $request->input('trainer_name') === '' ? null : $request->input('trainer_name'),
+        ]);
+
         $validated = $request->validate([
             'title' => 'required|string',
-            'trainer_name' => 'required|string',
-            'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date|after_or_equal:start_date',
-            'start_time' => 'nullable|date_format:H:i',
-            'end_time' => 'nullable|date_format:H:i',
+            'trainer_name' => 'sometimes|nullable|string',
+
+            'start_date' => 'sometimes|nullable|date',
+            'end_date' => 'sometimes|nullable|date|after_or_equal:start_date',
+            'start_time' => 'sometimes|nullable|date_format:H:i',
+            'end_time' => 'sometimes|nullable|date_format:H:i',
+
             'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
@@ -297,27 +313,32 @@ class ClassSessionController extends Controller
         ]);
 
         $class->title = $validated['title'];
-        $class->trainer_name = $validated['trainer_name'];
+        $class->trainer_name = $validated['trainer_name'] ?? $class->trainer_name;
 
-        if (!empty($validated['start_date'])) $class->date_iso = $validated['start_date'];
-        if (!empty($validated['end_date'])) $class->end_date_iso = $validated['end_date'];
+        if (array_key_exists('start_date', $validated) && !empty($validated['start_date'])) {
+            $class->date_iso = $validated['start_date'];
+        }
+        if (array_key_exists('end_date', $validated) && !empty($validated['end_date'])) {
+            $class->end_date_iso = $validated['end_date'];
+        }
 
         $hasTimes = !empty($validated['start_time']) && !empty($validated['end_time']);
-
-        // ✅ NOT NULL siempre
         $class->time_range = $hasTimes
             ? ($validated['start_time'] . ' - ' . $validated['end_time'])
-            : ('00:00 - 00:00');
+            : '00:00 - 00:00';
 
         $class->modality = $validated['modality'];
         $class->level = $hasTimes ? 'General' : 'Draft';
-        $class->spots_left = $validated['spots_left'];
+
+        $class->spots_left = (int) $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
 
         $class->workday_url = $validated['workday_url'] ?? null;
         $class->audience = $validated['audience'] ?? 'all_employees';
 
-        if (!$class->group_code) $class->group_code = (string) Str::uuid();
+        if (!$class->group_code) {
+            $class->group_code = (string) Str::uuid();
+        }
 
         $class->save();
 
@@ -336,8 +357,8 @@ class ClassSessionController extends Controller
     }
 
     /**
-     * ✅ SYNC SESIONES (PUT /api/admin/classes/{id}/sessions)
-     * ✅ sigue requiriendo sessions >= 1 (cuando ya quieres “publicar” sesiones reales)
+     * SYNC SESIONES (PUT /api/admin/classes/{id}/sessions)
+     * Requiere sessions >= 1 (para “publicar” sesiones reales)
      */
     public function syncSessions(Request $request, $id)
     {
@@ -367,7 +388,7 @@ class ClassSessionController extends Controller
         $incomingIds = collect($validated['sessions'])
             ->pluck('id')
             ->filter()
-            ->map(fn($v) => (int) $v)
+            ->map(fn ($v) => (int) $v)
             ->values();
 
         $workdayUrl = array_key_exists('workday_url', $validated)
@@ -380,6 +401,7 @@ class ClassSessionController extends Controller
 
         return DB::transaction(function () use ($validated, $base, $groupCode, $incomingIds, $rangeStart, $rangeEnd, $workdayUrl, $audience) {
 
+            // borra las que no vienen, pero nunca borra la base
             if ($incomingIds->isNotEmpty()) {
                 ClassSession::where('group_code', $groupCode)
                     ->whereNotIn('id', $incomingIds)
@@ -389,12 +411,13 @@ class ClassSessionController extends Controller
 
             $first = $validated['sessions'][0];
 
+            // actualiza base con rango real y primera hora
             $base->date_iso = $rangeStart;
             $base->end_date_iso = $rangeEnd;
             $base->time_range = $first['start_time'] . ' - ' . $first['end_time'];
             $base->workday_url = $workdayUrl;
             $base->audience = $audience ?? $base->audience ?? 'all_employees';
-            $base->level = 'General'; // ✅ deja de ser Draft
+            $base->level = 'General'; // deja de ser Draft
             $base->save();
 
             foreach ($validated['sessions'] as $s) {
