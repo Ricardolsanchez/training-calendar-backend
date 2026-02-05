@@ -25,11 +25,11 @@ class ClassController extends Controller
     {
         $validated = $request->validate([
             'title' => 'required|string',
-            'trainer_name' => 'nullable|string|max:255',   // 👈 nombre, no id
+            'trainer_name' => 'nullable|string|max:255',
             'start_date' => 'required|date',
             'end_date' => 'required|date',
-            'start_time' => 'required',
-            'end_time' => 'required',
+            'start_time' => 'nullable|date_format:H:i',
+            'end_time' => 'nullable|date_format:H:i',
             'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
         ]);
@@ -49,8 +49,8 @@ class ClassController extends Controller
             'trainer_name' => 'nullable|string|max:255',
             'start_date' => 'required|date',
             'end_date' => 'required|date',
-            'start_time' => 'required',
-            'end_time' => 'required',
+            'start_time' => 'nullable|date_format:H:i',
+            'end_time' => 'nullable|date_format:H:i',
             'modality' => 'required|in:Online,Presencial',
             'spots_left' => 'required|integer|min:0',
         ]);
