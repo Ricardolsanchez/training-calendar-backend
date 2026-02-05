@@ -29,6 +29,9 @@ class ClassSessionController extends Controller
                     [$startTime, $endTime] = array_map('trim', explode('-', $cls->time_range));
                 }
 
+                // ✅ "No offerings" se considera cuando el time_range está en "00:00 - 00:00"
+                $isNoOfferings = trim((string) $cls->time_range) === '00:00 - 00:00';
+
                 return [
                     'id' => $cls->id,
                     'title' => $cls->title,
@@ -52,8 +55,11 @@ class ClassSessionController extends Controller
                     'audience' => $cls->audience ?? 'all_employees',
                     'group_code' => $cls->group_code ?? null,
 
-                    // útil para admin
+                    // ✅ Draft solo si realmente lo manejas aparte; aquí lo dejamos por compatibilidad
                     'is_draft' => ($cls->level === 'Draft'),
+
+                    // ✅ útil si quieres mostrar badge o debug
+                    'is_no_offerings' => $isNoOfferings,
                 ];
             }),
         ]);
@@ -61,7 +67,8 @@ class ClassSessionController extends Controller
 
     /**
      * LISTADO PÚBLICO (GET /api/classes)
-     * Excluye Draft
+     * ✅ mantiene compatibilidad: excluye Draft
+     * ✅ PERO tus "sin horas" ya NO serán Draft, serán General con "00:00 - 00:00"
      */
     public function indexPublic()
     {
@@ -110,7 +117,7 @@ class ClassSessionController extends Controller
 
     /**
      * LISTADO ADMIN AGRUPADO (GET /api/admin/classes-grouped)
-     * Incluye Draft
+     * Incluye todo (incluso Draft si existieran)
      */
     public function indexAdminGrouped()
     {
@@ -123,7 +130,7 @@ class ClassSessionController extends Controller
 
     /**
      * LISTADO PÚBLICO AGRUPADO (GET /api/classes-grouped)
-     * Excluye Draft
+     * ✅ Excluye Draft (compatibilidad con tu BookingCalendar)
      */
     public function indexPublicGrouped()
     {
@@ -137,6 +144,9 @@ class ClassSessionController extends Controller
 
     /**
      * Helper: arma la respuesta agrupada
+     * ✅ NUEVO REQUISITO:
+     * - Si NO se escogen horas, la clase queda PUBLICADA (General) pero debe salir sin sesiones (sessions_count=0)
+     * - Para eso, detectamos grupos "sin offerings" por time_range "00:00 - 00:00"
      */
     private function groupedResponse($rows)
     {
@@ -147,11 +157,22 @@ class ClassSessionController extends Controller
         $classes = $grouped->map(function ($items, $groupCode) {
             $first = $items->first();
 
-            $isDraftGroup = $items->every(fn ($x) => $x->level === 'Draft');
-
+            // ✅ toma el primer workday_url no vacío del grupo
             $workdayUrl = $items->pluck('workday_url')->filter()->first();
+
+            // ✅ ids para borrar desde admin (incluye base + sesiones)
             $allIds = $items->pluck('id')->values()->all();
 
+            // ✅ Draft group (se mantiene por compatibilidad si aún existen Draft viejos)
+            $isDraftGroup = $items->every(fn ($x) => $x->level === 'Draft');
+
+            // ✅ NUEVO: "No offerings scheduled yet" => todos con 00:00 - 00:00 o vacío
+            $isNoOfferingsGroup = $items->every(function ($x) {
+                $tr = trim((string) ($x->time_range ?? ''));
+                return $tr === '' || $tr === '00:00 - 00:00';
+            });
+
+            // Si es Draft "real" (por compatibilidad)
             if ($isDraftGroup) {
                 return [
                     'group_code' => $groupCode,
@@ -175,6 +196,31 @@ class ClassSessionController extends Controller
                 ];
             }
 
+            // ✅ NUEVO: publicado pero sin sesiones reales
+            if ($isNoOfferingsGroup) {
+                return [
+                    'group_code' => $groupCode,
+                    'base_id' => $first->id,
+                    'all_session_ids' => $allIds,
+                    'is_draft' => false, // ✅ publicado
+
+                    'title' => $first->title,
+                    'trainer_name' => $first->trainer_name,
+                    'modality' => $first->modality,
+                    'level' => $first->level, // típicamente General
+                    'audience' => $first->audience ?? 'all_employees',
+                    'description' => $first->description,
+                    'workday_url' => $workdayUrl ?? null,
+
+                    'start_date_iso' => null,
+                    'end_date_iso' => null,
+
+                    'sessions_count' => 0,
+                    'sessions' => [],
+                ];
+            }
+
+            // ✅ caso normal: hay sesiones reales
             $minDate = $items->min('date_iso');
             $maxDate = $items->max('date_iso');
 
@@ -215,9 +261,9 @@ class ClassSessionController extends Controller
 
     /**
      * CREAR CLASE (ADMIN – POST /api/admin/classes)
-     * Permite Draft:
-     * - si no hay start_time/end_time => Draft
-     * Nota: si tu DB tiene NOT NULL en time_range, guardamos '00:00 - 00:00'
+     * ✅ NUEVO REQUISITO:
+     * - Si NO se escogen horas: queda PUBLICADA (General), NO Draft
+     * - Se guarda time_range NOT NULL como "00:00 - 00:00"
      */
     public function store(Request $request)
     {
@@ -233,7 +279,7 @@ class ClassSessionController extends Controller
         $validated = $request->validate([
             'title' => 'required|string',
 
-            // ✅ para que no te dé 422 si aún no escogen trainer en draft
+            // ✅ puedes dejarlo nullable si quieres permitir crear sin trainer (si NO, cambia a required)
             'trainer_name' => 'sometimes|nullable|string',
 
             'start_date' => 'sometimes|nullable|date',
@@ -249,7 +295,6 @@ class ClassSessionController extends Controller
         ]);
 
         $hasTimes = !empty($validated['start_time']) && !empty($validated['end_time']);
-        $isDraft = !$hasTimes;
 
         $class = new ClassSession();
         $class->title = $validated['title'];
@@ -265,7 +310,9 @@ class ClassSessionController extends Controller
             : '00:00 - 00:00';
 
         $class->modality = $validated['modality'];
-        $class->level = $isDraft ? 'Draft' : 'General';
+
+        // ✅ CLAVE: aunque no haya horas, queda PUBLICADA
+        $class->level = 'General';
 
         $class->spots_left = (int) $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
@@ -282,7 +329,8 @@ class ClassSessionController extends Controller
 
     /**
      * ACTUALIZAR CLASE (ADMIN – PUT /api/admin/classes/{id})
-     * Permite Draft si no hay horas
+     * ✅ NUEVO REQUISITO:
+     * - Si quitan horas, sigue PUBLICADA (General) con "00:00 - 00:00"
      */
     public function update(Request $request, $id)
     {
@@ -313,7 +361,9 @@ class ClassSessionController extends Controller
         ]);
 
         $class->title = $validated['title'];
-        $class->trainer_name = $validated['trainer_name'] ?? $class->trainer_name;
+        if (array_key_exists('trainer_name', $validated)) {
+            $class->trainer_name = $validated['trainer_name'] ?? null;
+        }
 
         if (array_key_exists('start_date', $validated) && !empty($validated['start_date'])) {
             $class->date_iso = $validated['start_date'];
@@ -328,7 +378,9 @@ class ClassSessionController extends Controller
             : '00:00 - 00:00';
 
         $class->modality = $validated['modality'];
-        $class->level = $hasTimes ? 'General' : 'Draft';
+
+        // ✅ CLAVE: siempre publicado
+        $class->level = 'General';
 
         $class->spots_left = (int) $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
@@ -417,7 +469,10 @@ class ClassSessionController extends Controller
             $base->time_range = $first['start_time'] . ' - ' . $first['end_time'];
             $base->workday_url = $workdayUrl;
             $base->audience = $audience ?? $base->audience ?? 'all_employees';
-            $base->level = 'General'; // deja de ser Draft
+
+            // ✅ CLAVE: siempre General
+            $base->level = 'General';
+
             $base->save();
 
             foreach ($validated['sessions'] as $s) {
@@ -431,7 +486,7 @@ class ClassSessionController extends Controller
                     $row->title = $base->title;
                     $row->trainer_name = $base->trainer_name;
                     $row->modality = $base->modality;
-                    $row->level = $base->level ?? 'General';
+                    $row->level = 'General';
                     $row->spots_left = $base->spots_left;
                     $row->description = $base->description;
                     $row->workday_url = $workdayUrl;
@@ -451,7 +506,7 @@ class ClassSessionController extends Controller
                         'end_date_iso' => $rangeEnd,
                         'time_range' => $timeRange,
                         'modality' => $base->modality,
-                        'level' => $base->level ?? 'General',
+                        'level' => 'General',
                         'spots_left' => $base->spots_left,
                         'description' => $base->description,
                         'workday_url' => $workdayUrl,
