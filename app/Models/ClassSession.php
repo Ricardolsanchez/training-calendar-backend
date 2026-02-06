@@ -14,6 +14,7 @@ class ClassSession extends Model
     protected $fillable = [
         'title',
         'trainer_name',
+        'trainer_names',
         'date_iso',
         'end_date_iso',
         'time_range',
@@ -29,6 +30,7 @@ class ClassSession extends Model
     // Opcional (recomendado):
     protected $casts = [
         'spots_left' => 'integer',
+        'trainer_names' => 'array',
     ];
 
     public function bookings()

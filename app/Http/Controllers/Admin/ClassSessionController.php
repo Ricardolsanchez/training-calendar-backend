@@ -29,13 +29,20 @@ class ClassSessionController extends Controller
                     [$startTime, $endTime] = array_map('trim', explode('-', $cls->time_range));
                 }
 
-                // ✅ "No offerings" se considera cuando el time_range está en "00:00 - 00:00"
                 $isNoOfferings = trim((string) $cls->time_range) === '00:00 - 00:00';
+
+                $trainerNames = is_array($cls->trainer_names) ? $cls->trainer_names : [];
+                if (empty($trainerNames) && !empty($cls->trainer_name)) {
+                    $trainerNames = [$cls->trainer_name];
+                }
 
                 return [
                     'id' => $cls->id,
                     'title' => $cls->title,
+
+                    // ✅ compat + multi
                     'trainer_name' => $cls->trainer_name,
+                    'trainer_names' => $trainerNames,
 
                     'start_date' => $startDate,
                     'end_date' => $endDate,
@@ -55,10 +62,7 @@ class ClassSessionController extends Controller
                     'audience' => $cls->audience ?? 'all_employees',
                     'group_code' => $cls->group_code ?? null,
 
-                    // ✅ Draft solo si realmente lo manejas aparte; aquí lo dejamos por compatibilidad
                     'is_draft' => ($cls->level === 'Draft'),
-
-                    // ✅ útil si quieres mostrar badge o debug
                     'is_no_offerings' => $isNoOfferings,
                 ];
             }),
@@ -67,8 +71,7 @@ class ClassSessionController extends Controller
 
     /**
      * LISTADO PÚBLICO (GET /api/classes)
-     * ✅ mantiene compatibilidad: excluye Draft
-     * ✅ PERO tus "sin horas" ya NO serán Draft, serán General con "00:00 - 00:00"
+     * ✅ excluye Draft
      */
     public function indexPublic()
     {
@@ -89,10 +92,18 @@ class ClassSessionController extends Controller
                     [$startTime, $endTime] = array_map('trim', explode('-', $cls->time_range));
                 }
 
+                $trainerNames = is_array($cls->trainer_names) ? $cls->trainer_names : [];
+                if (empty($trainerNames) && !empty($cls->trainer_name)) {
+                    $trainerNames = [$cls->trainer_name];
+                }
+
                 return [
                     'id' => $cls->id,
                     'title' => $cls->title,
+
+                    // ✅ compat + multi
                     'trainer_name' => $cls->trainer_name,
+                    'trainer_names' => $trainerNames,
 
                     'start_date' => $startDate,
                     'end_date' => $endDate,
@@ -117,7 +128,6 @@ class ClassSessionController extends Controller
 
     /**
      * LISTADO ADMIN AGRUPADO (GET /api/admin/classes-grouped)
-     * Incluye todo (incluso Draft si existieran)
      */
     public function indexAdminGrouped()
     {
@@ -130,7 +140,7 @@ class ClassSessionController extends Controller
 
     /**
      * LISTADO PÚBLICO AGRUPADO (GET /api/classes-grouped)
-     * ✅ Excluye Draft (compatibilidad con tu BookingCalendar)
+     * ✅ Excluye Draft
      */
     public function indexPublicGrouped()
     {
@@ -144,9 +154,6 @@ class ClassSessionController extends Controller
 
     /**
      * Helper: arma la respuesta agrupada
-     * ✅ NUEVO REQUISITO:
-     * - Si NO se escogen horas, la clase queda PUBLICADA (General) pero debe salir sin sesiones (sessions_count=0)
-     * - Para eso, detectamos grupos "sin offerings" por time_range "00:00 - 00:00"
      */
     private function groupedResponse($rows)
     {
@@ -157,22 +164,23 @@ class ClassSessionController extends Controller
         $classes = $grouped->map(function ($items, $groupCode) {
             $first = $items->first();
 
-            // ✅ toma el primer workday_url no vacío del grupo
             $workdayUrl = $items->pluck('workday_url')->filter()->first();
-
-            // ✅ ids para borrar desde admin (incluye base + sesiones)
             $allIds = $items->pluck('id')->values()->all();
 
-            // ✅ Draft group (se mantiene por compatibilidad si aún existen Draft viejos)
-            $isDraftGroup = $items->every(fn($x) => $x->level === 'Draft');
+            $isDraftGroup = $items->every(fn ($x) => $x->level === 'Draft');
 
-            // ✅ NUEVO: "No offerings scheduled yet" => todos con 00:00 - 00:00 o vacío
             $isNoOfferingsGroup = $items->every(function ($x) {
                 $tr = trim((string) ($x->time_range ?? ''));
                 return $tr === '' || $tr === '00:00 - 00:00';
             });
 
-            // Si es Draft "real" (por compatibilidad)
+            // ✅ trainer_names: toma el primero no vacío del grupo o fallback al trainer_name
+            $trainerNames = $items->pluck('trainer_names')->filter(fn ($v) => is_array($v) && count($v) > 0)->first();
+            if (!is_array($trainerNames)) $trainerNames = [];
+            if (empty($trainerNames) && !empty($first->trainer_name)) {
+                $trainerNames = [$first->trainer_name];
+            }
+
             if ($isDraftGroup) {
                 return [
                     'group_code' => $groupCode,
@@ -181,7 +189,11 @@ class ClassSessionController extends Controller
                     'is_draft' => true,
 
                     'title' => $first->title,
+
+                    // ✅ compat + multi
                     'trainer_name' => $first->trainer_name,
+                    'trainer_names' => $trainerNames,
+
                     'modality' => $first->modality,
                     'level' => $first->level,
                     'audience' => $first->audience ?? 'all_employees',
@@ -196,18 +208,21 @@ class ClassSessionController extends Controller
                 ];
             }
 
-            // ✅ NUEVO: publicado pero sin sesiones reales
             if ($isNoOfferingsGroup) {
                 return [
                     'group_code' => $groupCode,
                     'base_id' => $first->id,
                     'all_session_ids' => $allIds,
-                    'is_draft' => false, // ✅ publicado
+                    'is_draft' => false,
 
                     'title' => $first->title,
+
+                    // ✅ compat + multi
                     'trainer_name' => $first->trainer_name,
+                    'trainer_names' => $trainerNames,
+
                     'modality' => $first->modality,
-                    'level' => $first->level, // típicamente General
+                    'level' => $first->level,
                     'audience' => $first->audience ?? 'all_employees',
                     'description' => $first->description,
                     'workday_url' => $workdayUrl ?? null,
@@ -220,7 +235,6 @@ class ClassSessionController extends Controller
                 ];
             }
 
-            // ✅ caso normal: hay sesiones reales
             $minDate = $items->min('date_iso');
             $maxDate = $items->max('date_iso');
 
@@ -240,7 +254,11 @@ class ClassSessionController extends Controller
                 'is_draft' => false,
 
                 'title' => $first->title,
+
+                // ✅ compat + multi
                 'trainer_name' => $first->trainer_name,
+                'trainer_names' => $trainerNames,
+
                 'modality' => $first->modality,
                 'level' => $first->level,
                 'audience' => $first->audience ?? 'all_employees',
@@ -261,25 +279,32 @@ class ClassSessionController extends Controller
 
     /**
      * CREAR CLASE (ADMIN – POST /api/admin/classes)
-     * ✅ NUEVO REQUISITO:
-     * - Si NO se escogen horas: queda PUBLICADA (General), NO Draft
-     * - Se guarda time_range NOT NULL como "00:00 - 00:00"
      */
     public function store(Request $request)
     {
         // Normaliza vacíos a null para evitar 422 por date_format
-        $request->merge(['start_time' => $request->input('start_time') === '' ? null : $request->input('start_time'),
+        $request->merge([
+            'start_time' => $request->input('start_time') === '' ? null : $request->input('start_time'),
             'end_time' => $request->input('end_time') === '' ? null : $request->input('end_time'),
             'start_date' => $request->input('start_date') === '' ? null : $request->input('start_date'),
             'end_date' => $request->input('end_date') === '' ? null : $request->input('end_date'),
             'trainer_name' => $request->input('trainer_name') === '' ? null : $request->input('trainer_name'),
         ]);
 
+        // ✅ acepta managers_leaders y normaliza
+        if ($request->input('audience') === 'managers_leaders') {
+            $request->merge(['audience' => 'manager_leaders']);
+        }
+
         $validated = $request->validate([
             'title' => 'required|string',
 
-            // ✅ puedes dejarlo nullable si quieres permitir crear sin trainer (si NO, cambia a required)
-            'trainer_name' => 'sometimes|nullable|string',
+            // ✅ multi trainers
+            'trainer_names' => 'sometimes|array',
+            'trainer_names.*' => 'string|max:255',
+
+            // ✅ compat legacy (si no mandan trainer_names)
+            'trainer_name' => 'sometimes|nullable|string|max:255',
 
             'start_date' => 'sometimes|nullable|date',
             'end_date' => 'sometimes|nullable|date|after_or_equal:start_date',
@@ -290,34 +315,46 @@ class ClassSessionController extends Controller
             'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
             'workday_url' => 'nullable|string|max:2000',
-            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,records',
+
+            // ✅ acepta ambos (por robustez)
+            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,managers_leaders,records',
         ]);
+
+        $trainerNames = [];
+        if (array_key_exists('trainer_names', $validated) && is_array($validated['trainer_names'])) {
+            $trainerNames = array_values(array_filter($validated['trainer_names'], fn ($v) => is_string($v) && trim($v) !== ''));
+        } elseif (!empty($validated['trainer_name'])) {
+            $trainerNames = [$validated['trainer_name']];
+        }
+
+        $trainerNameCompat = $trainerNames[0] ?? ($validated['trainer_name'] ?? null);
 
         $hasTimes = !empty($validated['start_time']) && !empty($validated['end_time']);
 
         $class = new ClassSession();
         $class->title = $validated['title'];
-        $class->trainer_name = $validated['trainer_name'] ?? null;
 
-        // si no hay start_date, usamos hoy para cumplir NOT NULL
+        // ✅ multi + compat
+        $class->trainer_names = $trainerNames;
+        $class->trainer_name = $trainerNameCompat;
+
         $class->date_iso = $validated['start_date'] ?? now()->toDateString();
         $class->end_date_iso = $validated['end_date'] ?? ($validated['start_date'] ?? $class->date_iso);
 
-        // time_range siempre NOT NULL
         $class->time_range = $hasTimes
             ? ($validated['start_time'] . ' - ' . $validated['end_time'])
             : '00:00 - 00:00';
 
         $class->modality = $validated['modality'];
-
-        // ✅ CLAVE: aunque no haya horas, queda PUBLICADA
         $class->level = 'General';
 
         $class->spots_left = (int) $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
 
         $class->workday_url = $validated['workday_url'] ?? null;
-        $class->audience = $validated['audience'] ?? 'all_employees';
+
+        $aud = $validated['audience'] ?? 'all_employees';
+        $class->audience = $aud === 'managers_leaders' ? 'manager_leaders' : $aud;
 
         $class->group_code = (string) Str::uuid();
 
@@ -328,8 +365,6 @@ class ClassSessionController extends Controller
 
     /**
      * ACTUALIZAR CLASE (ADMIN – PUT /api/admin/classes/{id})
-     * ✅ NUEVO REQUISITO:
-     * - Si quitan horas, sigue PUBLICADA (General) con "00:00 - 00:00"
      */
     public function update(Request $request, $id)
     {
@@ -343,9 +378,19 @@ class ClassSessionController extends Controller
             'trainer_name' => $request->input('trainer_name') === '' ? null : $request->input('trainer_name'),
         ]);
 
+        if ($request->input('audience') === 'managers_leaders') {
+            $request->merge(['audience' => 'manager_leaders']);
+        }
+
         $validated = $request->validate([
             'title' => 'required|string',
-            'trainer_name' => 'sometimes|nullable|string',
+
+            // ✅ multi trainers
+            'trainer_names' => 'sometimes|array',
+            'trainer_names.*' => 'string|max:255',
+
+            // ✅ compat legacy
+            'trainer_name' => 'sometimes|nullable|string|max:255',
 
             'start_date' => 'sometimes|nullable|date',
             'end_date' => 'sometimes|nullable|date|after_or_equal:start_date',
@@ -356,12 +401,26 @@ class ClassSessionController extends Controller
             'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
             'workday_url' => 'nullable|string|max:2000',
-            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,records',
+
+            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,managers_leaders,records',
         ]);
 
         $class->title = $validated['title'];
-        if (array_key_exists('trainer_name', $validated)) {
+
+        // ✅ multi + compat: SOLO si lo mandaron (para no pisar sin querer)
+        if (array_key_exists('trainer_names', $validated)) {
+            $trainerNames = is_array($validated['trainer_names'])
+                ? array_values(array_filter($validated['trainer_names'], fn ($v) => is_string($v) && trim($v) !== ''))
+                : [];
+
+            $class->trainer_names = $trainerNames;
+            $class->trainer_name = $trainerNames[0] ?? null; // compat
+        } elseif (array_key_exists('trainer_name', $validated)) {
+            // fallback legacy si mandan solo trainer_name
             $class->trainer_name = $validated['trainer_name'] ?? null;
+            if (!empty($class->trainer_name)) {
+                $class->trainer_names = [$class->trainer_name];
+            }
         }
 
         if (array_key_exists('start_date', $validated) && !empty($validated['start_date'])) {
@@ -377,15 +436,15 @@ class ClassSessionController extends Controller
             : '00:00 - 00:00';
 
         $class->modality = $validated['modality'];
-
-        // ✅ CLAVE: siempre publicado
         $class->level = 'General';
 
         $class->spots_left = (int) $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
 
         $class->workday_url = $validated['workday_url'] ?? null;
-        $class->audience = $validated['audience'] ?? 'all_employees';
+
+        $aud = $validated['audience'] ?? 'all_employees';
+        $class->audience = $aud === 'managers_leaders' ? 'manager_leaders' : $aud;
 
         if (!$class->group_code) {
             $class->group_code = (string) Str::uuid();
@@ -409,11 +468,14 @@ class ClassSessionController extends Controller
 
     /**
      * SYNC SESIONES (PUT /api/admin/classes/{id}/sessions)
-     * Requiere sessions >= 1 (para “publicar” sesiones reales)
      */
     public function syncSessions(Request $request, $id)
     {
         $base = ClassSession::findOrFail($id);
+
+        if ($request->input('audience') === 'managers_leaders') {
+            $request->merge(['audience' => 'manager_leaders']);
+        }
 
         $validated = $request->validate([
             'sessions' => 'required|array|min:1',
@@ -422,8 +484,9 @@ class ClassSessionController extends Controller
             'sessions.*.start_time' => ['required', 'date_format:H:i'],
             'sessions.*.end_time' => ['required', 'date_format:H:i'],
             'workday_url' => 'nullable|string|max:2000',
-            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,manager_leaders,records',
 
+            // ✅ FIX: sin duplicados + robusto plural
+            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,managers_leaders,records',
         ]);
 
         if (!$base->group_code) {
@@ -440,7 +503,7 @@ class ClassSessionController extends Controller
         $incomingIds = collect($validated['sessions'])
             ->pluck('id')
             ->filter()
-            ->map(fn($v) => (int) $v)
+            ->map(fn ($v) => (int) $v)
             ->values();
 
         $workdayUrl = array_key_exists('workday_url', $validated)
@@ -451,9 +514,20 @@ class ClassSessionController extends Controller
             ? ($validated['audience'] ?: null)
             : $base->audience;
 
-        return DB::transaction(function () use ($validated, $base, $groupCode, $incomingIds, $rangeStart, $rangeEnd, $workdayUrl, $audience) {
+        if ($audience === 'managers_leaders') {
+            $audience = 'manager_leaders';
+        }
 
-            // borra las que no vienen, pero nunca borra la base
+        return DB::transaction(function () use (
+            $validated,
+            $base,
+            $groupCode,
+            $incomingIds,
+            $rangeStart,
+            $rangeEnd,
+            $workdayUrl,
+            $audience
+        ) {
             if ($incomingIds->isNotEmpty()) {
                 ClassSession::where('group_code', $groupCode)
                     ->whereNotIn('id', $incomingIds)
@@ -463,15 +537,17 @@ class ClassSessionController extends Controller
 
             $first = $validated['sessions'][0];
 
-            // actualiza base con rango real y primera hora
             $base->date_iso = $rangeStart;
             $base->end_date_iso = $rangeEnd;
             $base->time_range = $first['start_time'] . ' - ' . $first['end_time'];
             $base->workday_url = $workdayUrl;
             $base->audience = $audience ?? $base->audience ?? 'all_employees';
-
-            // ✅ CLAVE: siempre General
             $base->level = 'General';
+
+            // ✅ asegura compat: si por alguna razón trainer_names está vacío pero trainer_name existe
+            if ((!is_array($base->trainer_names) || count($base->trainer_names) === 0) && !empty($base->trainer_name)) {
+                $base->trainer_names = [$base->trainer_name];
+            }
 
             $base->save();
 
@@ -484,7 +560,11 @@ class ClassSessionController extends Controller
                         ->firstOrFail();
 
                     $row->title = $base->title;
+
+                    // ✅ multi + compat
+                    $row->trainer_names = is_array($base->trainer_names) ? $base->trainer_names : [];
                     $row->trainer_name = $base->trainer_name;
+
                     $row->modality = $base->modality;
                     $row->level = 'General';
                     $row->spots_left = $base->spots_left;
@@ -501,7 +581,11 @@ class ClassSessionController extends Controller
                 } else {
                     ClassSession::create([
                         'title' => $base->title,
+
+                        // ✅ multi + compat
+                        'trainer_names' => is_array($base->trainer_names) ? $base->trainer_names : [],
                         'trainer_name' => $base->trainer_name,
+
                         'date_iso' => $s['date_iso'],
                         'end_date_iso' => $rangeEnd,
                         'time_range' => $timeRange,
