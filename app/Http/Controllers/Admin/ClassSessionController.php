@@ -291,7 +291,7 @@ class ClassSessionController extends Controller
             'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
             'workday_url' => 'nullable|string|max:2000',
-            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,records',
+            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,records',
         ]);
 
         $hasTimes = !empty($validated['start_time']) && !empty($validated['end_time']);
@@ -357,7 +357,7 @@ class ClassSessionController extends Controller
             'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
             'workday_url' => 'nullable|string|max:2000',
-            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,records',
+            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,records',
         ]);
 
         $class->title = $validated['title'];
@@ -423,7 +423,7 @@ class ClassSessionController extends Controller
             'sessions.*.start_time' => ['required', 'date_format:H:i'],
             'sessions.*.end_time' => ['required', 'date_format:H:i'],
             'workday_url' => 'nullable|string|max:2000',
-            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,records',
+            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,records',
         ]);
 
         if (!$base->group_code) {
