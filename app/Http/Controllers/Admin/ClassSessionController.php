@@ -422,7 +422,8 @@ class ClassSessionController extends Controller
             'sessions.*.start_time' => ['required', 'date_format:H:i'],
             'sessions.*.end_time' => ['required', 'date_format:H:i'],
             'workday_url' => 'nullable|string|max:2000',
-            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,records',
+            'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,manager_leaders,records',
+
         ]);
 
         if (!$base->group_code) {
