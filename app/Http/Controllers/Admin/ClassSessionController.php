@@ -164,7 +164,7 @@ class ClassSessionController extends Controller
             $allIds = $items->pluck('id')->values()->all();
 
             // ✅ Draft group (se mantiene por compatibilidad si aún existen Draft viejos)
-            $isDraftGroup = $items->every(fn ($x) => $x->level === 'Draft');
+            $isDraftGroup = $items->every(fn($x) => $x->level === 'Draft');
 
             // ✅ NUEVO: "No offerings scheduled yet" => todos con 00:00 - 00:00 o vacío
             $isNoOfferingsGroup = $items->every(function ($x) {
@@ -268,8 +268,7 @@ class ClassSessionController extends Controller
     public function store(Request $request)
     {
         // Normaliza vacíos a null para evitar 422 por date_format
-        $request->merge([
-            'start_time' => $request->input('start_time') === '' ? null : $request->input('start_time'),
+        $request->merge(['start_time' => $request->input('start_time') === '' ? null : $request->input('start_time'),
             'end_time' => $request->input('end_time') === '' ? null : $request->input('end_time'),
             'start_date' => $request->input('start_date') === '' ? null : $request->input('start_date'),
             'end_date' => $request->input('end_date') === '' ? null : $request->input('end_date'),
@@ -440,7 +439,7 @@ class ClassSessionController extends Controller
         $incomingIds = collect($validated['sessions'])
             ->pluck('id')
             ->filter()
-            ->map(fn ($v) => (int) $v)
+            ->map(fn($v) => (int) $v)
             ->values();
 
         $workdayUrl = array_key_exists('workday_url', $validated)
