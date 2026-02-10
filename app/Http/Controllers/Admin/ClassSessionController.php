@@ -175,7 +175,10 @@ class ClassSessionController extends Controller
             });
 
             // ✅ trainer_names: toma el primero no vacío del grupo o fallback al trainer_name
-            $trainerNames = $items->pluck('trainer_names')->filter(fn ($v) => is_array($v) && count($v) > 0)->first();
+            $trainerNames = $items->pluck('trainer_names')
+                ->filter(fn ($v) => is_array($v) && count($v) > 0)
+                ->first();
+
             if (!is_array($trainerNames)) $trainerNames = [];
             if (empty($trainerNames) && !empty($first->trainer_name)) {
                 $trainerNames = [$first->trainer_name];
@@ -282,7 +285,6 @@ class ClassSessionController extends Controller
      */
     public function store(Request $request)
     {
-        // Normaliza vacíos a null para evitar 422 por date_format
         $request->merge([
             'start_time' => $request->input('start_time') === '' ? null : $request->input('start_time'),
             'end_time' => $request->input('end_time') === '' ? null : $request->input('end_time'),
@@ -291,7 +293,6 @@ class ClassSessionController extends Controller
             'trainer_name' => $request->input('trainer_name') === '' ? null : $request->input('trainer_name'),
         ]);
 
-        // ✅ acepta managers_leaders y normaliza
         if ($request->input('audience') === 'managers_leaders') {
             $request->merge(['audience' => 'manager_leaders']);
         }
@@ -303,7 +304,7 @@ class ClassSessionController extends Controller
             'trainer_names' => 'sometimes|array',
             'trainer_names.*' => 'string|max:255',
 
-            // ✅ compat legacy (si no mandan trainer_names)
+            // ✅ compat legacy
             'trainer_name' => 'sometimes|nullable|string|max:255',
 
             'start_date' => 'sometimes|nullable|date',
@@ -316,13 +317,15 @@ class ClassSessionController extends Controller
             'description' => 'nullable|string',
             'workday_url' => 'nullable|string|max:2000',
 
-            // ✅ acepta ambos (por robustez)
             'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,managers_leaders,records',
         ]);
 
         $trainerNames = [];
         if (array_key_exists('trainer_names', $validated) && is_array($validated['trainer_names'])) {
-            $trainerNames = array_values(array_filter($validated['trainer_names'], fn ($v) => is_string($v) && trim($v) !== ''));
+            $trainerNames = array_values(array_filter(
+                $validated['trainer_names'],
+                fn ($v) => is_string($v) && trim($v) !== ''
+            ));
         } elseif (!empty($validated['trainer_name'])) {
             $trainerNames = [$validated['trainer_name']];
         }
@@ -410,13 +413,15 @@ class ClassSessionController extends Controller
         // ✅ multi + compat: SOLO si lo mandaron (para no pisar sin querer)
         if (array_key_exists('trainer_names', $validated)) {
             $trainerNames = is_array($validated['trainer_names'])
-                ? array_values(array_filter($validated['trainer_names'], fn ($v) => is_string($v) && trim($v) !== ''))
+                ? array_values(array_filter(
+                    $validated['trainer_names'],
+                    fn ($v) => is_string($v) && trim($v) !== ''
+                ))
                 : [];
 
             $class->trainer_names = $trainerNames;
             $class->trainer_name = $trainerNames[0] ?? null; // compat
         } elseif (array_key_exists('trainer_name', $validated)) {
-            // fallback legacy si mandan solo trainer_name
             $class->trainer_name = $validated['trainer_name'] ?? null;
             if (!empty($class->trainer_name)) {
                 $class->trainer_names = [$class->trainer_name];
@@ -467,7 +472,8 @@ class ClassSessionController extends Controller
     }
 
     /**
-     * SYNC SESIONES (PUT /api/admin/classes/{id}/sessions)
+     * ✅ SYNC SESIONES (PUT /api/admin/classes/{id}/sessions)
+     * 🔥 FIX: ahora recibe spots_left y lo aplica a base + TODAS las sesiones del grupo
      */
     public function syncSessions(Request $request, $id)
     {
@@ -483,9 +489,11 @@ class ClassSessionController extends Controller
             'sessions.*.date_iso' => ['required', 'date_format:Y-m-d'],
             'sessions.*.start_time' => ['required', 'date_format:H:i'],
             'sessions.*.end_time' => ['required', 'date_format:H:i'],
-            'workday_url' => 'nullable|string|max:2000',
 
-            // ✅ FIX: sin duplicados + robusto plural
+            // ✅ NUEVO (FIX seats): valor global de cupos a aplicar en base + sesiones
+            'spots_left' => 'required|integer|min:0',
+
+            'workday_url' => 'nullable|string|max:2000',
             'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,managers_leaders,records',
         ]);
 
@@ -518,6 +526,8 @@ class ClassSessionController extends Controller
             $audience = 'manager_leaders';
         }
 
+        $spotsLeft = (int) $validated['spots_left'];
+
         return DB::transaction(function () use (
             $validated,
             $base,
@@ -526,8 +536,10 @@ class ClassSessionController extends Controller
             $rangeStart,
             $rangeEnd,
             $workdayUrl,
-            $audience
+            $audience,
+            $spotsLeft
         ) {
+            // borra las que no vienen, pero nunca borra la base
             if ($incomingIds->isNotEmpty()) {
                 ClassSession::where('group_code', $groupCode)
                     ->whereNotIn('id', $incomingIds)
@@ -537,6 +549,7 @@ class ClassSessionController extends Controller
 
             $first = $validated['sessions'][0];
 
+            // actualiza base con rango real y primera hora
             $base->date_iso = $rangeStart;
             $base->end_date_iso = $rangeEnd;
             $base->time_range = $first['start_time'] . ' - ' . $first['end_time'];
@@ -544,7 +557,10 @@ class ClassSessionController extends Controller
             $base->audience = $audience ?? $base->audience ?? 'all_employees';
             $base->level = 'General';
 
-            // ✅ asegura compat: si por alguna razón trainer_names está vacío pero trainer_name existe
+            // ✅ FIX seats: aplica al base
+            $base->spots_left = $spotsLeft;
+
+            // ✅ asegura compat trainers
             if ((!is_array($base->trainer_names) || count($base->trainer_names) === 0) && !empty($base->trainer_name)) {
                 $base->trainer_names = [$base->trainer_name];
             }
@@ -567,7 +583,10 @@ class ClassSessionController extends Controller
 
                     $row->modality = $base->modality;
                     $row->level = 'General';
-                    $row->spots_left = $base->spots_left;
+
+                    // ✅ FIX seats: aplica a cada sesión
+                    $row->spots_left = $spotsLeft;
+
                     $row->description = $base->description;
                     $row->workday_url = $workdayUrl;
                     $row->audience = $base->audience;
@@ -591,7 +610,10 @@ class ClassSessionController extends Controller
                         'time_range' => $timeRange,
                         'modality' => $base->modality,
                         'level' => 'General',
-                        'spots_left' => $base->spots_left,
+
+                        // ✅ FIX seats: aplica a nuevas sesiones
+                        'spots_left' => $spotsLeft,
+
                         'description' => $base->description,
                         'workday_url' => $workdayUrl,
                         'audience' => $base->audience,
