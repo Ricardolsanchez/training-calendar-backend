@@ -55,7 +55,7 @@ class ClassSessionController extends Controller
 
                     'modality' => $cls->modality,
                     'level' => $cls->level,
-                    'spots_left' => $cls->spots_left,
+                    'spots_left' => (int) $cls->spots_left, // ✅
                     'description' => $cls->description,
 
                     'workday_url' => $cls->workday_url ?? null,
@@ -115,7 +115,7 @@ class ClassSessionController extends Controller
 
                     'modality' => $cls->modality,
                     'level' => $cls->level,
-                    'spots_left' => $cls->spots_left,
+                    'spots_left' => (int) $cls->spots_left, // ✅
                     'description' => $cls->description,
 
                     'workday_url' => $cls->workday_url ?? null,
@@ -154,6 +154,7 @@ class ClassSessionController extends Controller
 
     /**
      * Helper: arma la respuesta agrupada
+     * ✅ INCLUYE spots_left A NIVEL DE GRUPO SIEMPRE (inclusive Draft/NoOfferings)
      */
     private function groupedResponse($rows)
     {
@@ -174,68 +175,60 @@ class ClassSessionController extends Controller
                 return $tr === '' || $tr === '00:00 - 00:00';
             });
 
-            // ✅ trainer_names: toma el primero no vacío del grupo o fallback al trainer_name
             $trainerNames = $items->pluck('trainer_names')
                 ->filter(fn ($v) => is_array($v) && count($v) > 0)
                 ->first();
 
-            if (!is_array($trainerNames)) $trainerNames = [];
+            if (!is_array($trainerNames)) {
+                $trainerNames = [];
+            }
             if (empty($trainerNames) && !empty($first->trainer_name)) {
                 $trainerNames = [$first->trainer_name];
             }
 
+            // ✅ spots_left a nivel de grupo:
+            // - preferimos el valor del base (first)
+            // - si por alguna razón viene null, fallback al máx de sesiones
+            $groupSpots = (int) ($first->spots_left ?? $items->max('spots_left') ?? 0);
+
+            // Base común del payload
+            $basePayload = [
+                'group_code' => $groupCode,
+                'base_id' => $first->id,
+                'all_session_ids' => $allIds,
+
+                'title' => $first->title,
+                'trainer_name' => $first->trainer_name,
+                'trainer_names' => $trainerNames,
+
+                'modality' => $first->modality,
+                'level' => $first->level,
+                'audience' => $first->audience ?? 'all_employees',
+                'description' => $first->description,
+                'workday_url' => $workdayUrl ?? null,
+
+                // ✅ NUEVO: siempre presente
+                'spots_left' => $groupSpots,
+            ];
+
             if ($isDraftGroup) {
-                return [
-                    'group_code' => $groupCode,
-                    'base_id' => $first->id,
-                    'all_session_ids' => $allIds,
+                return array_merge($basePayload, [
                     'is_draft' => true,
-
-                    'title' => $first->title,
-
-                    // ✅ compat + multi
-                    'trainer_name' => $first->trainer_name,
-                    'trainer_names' => $trainerNames,
-
-                    'modality' => $first->modality,
-                    'level' => $first->level,
-                    'audience' => $first->audience ?? 'all_employees',
-                    'description' => $first->description,
-                    'workday_url' => $workdayUrl ?? null,
-
                     'start_date_iso' => null,
                     'end_date_iso' => null,
-
                     'sessions_count' => 0,
                     'sessions' => [],
-                ];
+                ]);
             }
 
             if ($isNoOfferingsGroup) {
-                return [
-                    'group_code' => $groupCode,
-                    'base_id' => $first->id,
-                    'all_session_ids' => $allIds,
+                return array_merge($basePayload, [
                     'is_draft' => false,
-
-                    'title' => $first->title,
-
-                    // ✅ compat + multi
-                    'trainer_name' => $first->trainer_name,
-                    'trainer_names' => $trainerNames,
-
-                    'modality' => $first->modality,
-                    'level' => $first->level,
-                    'audience' => $first->audience ?? 'all_employees',
-                    'description' => $first->description,
-                    'workday_url' => $workdayUrl ?? null,
-
                     'start_date_iso' => null,
                     'end_date_iso' => null,
-
                     'sessions_count' => 0,
                     'sessions' => [],
-                ];
+                ]);
             }
 
             $minDate = $items->min('date_iso');
@@ -250,31 +243,13 @@ class ClassSessionController extends Controller
                 ];
             })->values();
 
-            return [
-                'group_code' => $groupCode,
-                'base_id' => $first->id,
-                'all_session_ids' => $allIds,
+            return array_merge($basePayload, [
                 'is_draft' => false,
-
-                'title' => $first->title,
-
-                // ✅ compat + multi
-                'trainer_name' => $first->trainer_name,
-                'trainer_names' => $trainerNames,
-
-                'modality' => $first->modality,
-                'level' => $first->level,
-                'audience' => $first->audience ?? 'all_employees',
-                'description' => $first->description,
-
-                'workday_url' => $workdayUrl ?? null,
-
                 'start_date_iso' => $minDate,
                 'end_date_iso' => $maxDate,
-
                 'sessions_count' => $sessions->count(),
                 'sessions' => $sessions,
-            ];
+            ]);
         })->values();
 
         return response()->json(['classes' => $classes]);
@@ -313,7 +288,7 @@ class ClassSessionController extends Controller
             'end_time' => 'sometimes|nullable|date_format:H:i',
 
             'modality' => 'required|in:Online,Presencial',
-            'spots_left' => 'required|integer|min:0',
+            'spots_left' => 'required|integer|min:0', // ✅
             'description' => 'nullable|string',
             'workday_url' => 'nullable|string|max:2000',
 
@@ -351,7 +326,7 @@ class ClassSessionController extends Controller
         $class->modality = $validated['modality'];
         $class->level = 'General';
 
-        $class->spots_left = (int) $validated['spots_left'];
+        $class->spots_left = (int) $validated['spots_left']; // ✅
         $class->description = $validated['description'] ?? null;
 
         $class->workday_url = $validated['workday_url'] ?? null;
@@ -401,7 +376,7 @@ class ClassSessionController extends Controller
             'end_time' => 'sometimes|nullable|date_format:H:i',
 
             'modality' => 'required|in:Online,Presencial',
-            'spots_left' => 'required|integer|min:0',
+            'spots_left' => 'required|integer|min:0', // ✅
             'description' => 'nullable|string',
             'workday_url' => 'nullable|string|max:2000',
 
@@ -443,7 +418,7 @@ class ClassSessionController extends Controller
         $class->modality = $validated['modality'];
         $class->level = 'General';
 
-        $class->spots_left = (int) $validated['spots_left'];
+        $class->spots_left = (int) $validated['spots_left']; // ✅
         $class->description = $validated['description'] ?? null;
 
         $class->workday_url = $validated['workday_url'] ?? null;
@@ -473,7 +448,7 @@ class ClassSessionController extends Controller
 
     /**
      * ✅ SYNC SESIONES (PUT /api/admin/classes/{id}/sessions)
-     * 🔥 FIX: ahora recibe spots_left y lo aplica a base + TODAS las sesiones del grupo
+     * 🔥 aplica spots_left a base + TODAS las sesiones del grupo
      */
     public function syncSessions(Request $request, $id)
     {
@@ -490,7 +465,7 @@ class ClassSessionController extends Controller
             'sessions.*.start_time' => ['required', 'date_format:H:i'],
             'sessions.*.end_time' => ['required', 'date_format:H:i'],
 
-            // ✅ NUEVO (FIX seats): valor global de cupos a aplicar en base + sesiones
+            // ✅ spots_left global
             'spots_left' => 'required|integer|min:0',
 
             'workday_url' => 'nullable|string|max:2000',
@@ -557,10 +532,10 @@ class ClassSessionController extends Controller
             $base->audience = $audience ?? $base->audience ?? 'all_employees';
             $base->level = 'General';
 
-            // ✅ FIX seats: aplica al base
+            // ✅ aplica cupos al base
             $base->spots_left = $spotsLeft;
 
-            // ✅ asegura compat trainers
+            // asegura compat trainers
             if ((!is_array($base->trainer_names) || count($base->trainer_names) === 0) && !empty($base->trainer_name)) {
                 $base->trainer_names = [$base->trainer_name];
             }
@@ -577,14 +552,13 @@ class ClassSessionController extends Controller
 
                     $row->title = $base->title;
 
-                    // ✅ multi + compat
                     $row->trainer_names = is_array($base->trainer_names) ? $base->trainer_names : [];
                     $row->trainer_name = $base->trainer_name;
 
                     $row->modality = $base->modality;
                     $row->level = 'General';
 
-                    // ✅ FIX seats: aplica a cada sesión
+                    // ✅ aplica cupos a cada sesión
                     $row->spots_left = $spotsLeft;
 
                     $row->description = $base->description;
@@ -601,7 +575,6 @@ class ClassSessionController extends Controller
                     ClassSession::create([
                         'title' => $base->title,
 
-                        // ✅ multi + compat
                         'trainer_names' => is_array($base->trainer_names) ? $base->trainer_names : [],
                         'trainer_name' => $base->trainer_name,
 
@@ -611,7 +584,6 @@ class ClassSessionController extends Controller
                         'modality' => $base->modality,
                         'level' => 'General',
 
-                        // ✅ FIX seats: aplica a nuevas sesiones
                         'spots_left' => $spotsLeft,
 
                         'description' => $base->description,
@@ -635,6 +607,7 @@ class ClassSessionController extends Controller
                 'sessions' => $fresh,
                 'workday_url' => $fresh->pluck('workday_url')->filter()->first(),
                 'audience' => $fresh->pluck('audience')->filter()->first() ?? 'all_employees',
+                'spots_left' => (int) ($fresh->first()?->spots_left ?? $spotsLeft), // ✅ útil para el FE
             ]);
         });
     }
