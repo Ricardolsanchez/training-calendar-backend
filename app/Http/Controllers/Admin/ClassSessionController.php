@@ -10,9 +10,6 @@ use Illuminate\Support\Str;
 
 class ClassSessionController extends Controller
 {
-    /**
-     * LISTADO PARA ADMIN (GET /api/admin/classes)
-     */
     public function index()
     {
         $classes = ClassSession::orderBy('date_iso')->orderBy('time_range')->get();
@@ -40,7 +37,6 @@ class ClassSessionController extends Controller
                     'id' => $cls->id,
                     'title' => $cls->title,
 
-                    // ✅ compat + multi
                     'trainer_name' => $cls->trainer_name,
                     'trainer_names' => $trainerNames,
 
@@ -55,7 +51,7 @@ class ClassSessionController extends Controller
 
                     'modality' => $cls->modality,
                     'level' => $cls->level,
-                    'spots_left' => (int) $cls->spots_left, // ✅
+                    'spots_left' => (int) $cls->spots_left,
                     'description' => $cls->description,
 
                     'workday_url' => $cls->workday_url ?? null,
@@ -69,10 +65,6 @@ class ClassSessionController extends Controller
         ]);
     }
 
-    /**
-     * LISTADO PÚBLICO (GET /api/classes)
-     * ✅ excluye Draft
-     */
     public function indexPublic()
     {
         $classes = ClassSession::where('level', '!=', 'Draft')
@@ -101,7 +93,6 @@ class ClassSessionController extends Controller
                     'id' => $cls->id,
                     'title' => $cls->title,
 
-                    // ✅ compat + multi
                     'trainer_name' => $cls->trainer_name,
                     'trainer_names' => $trainerNames,
 
@@ -115,7 +106,7 @@ class ClassSessionController extends Controller
 
                     'modality' => $cls->modality,
                     'level' => $cls->level,
-                    'spots_left' => (int) $cls->spots_left, // ✅
+                    'spots_left' => (int) $cls->spots_left,
                     'description' => $cls->description,
 
                     'workday_url' => $cls->workday_url ?? null,
@@ -126,9 +117,6 @@ class ClassSessionController extends Controller
         ]);
     }
 
-    /**
-     * LISTADO ADMIN AGRUPADO (GET /api/admin/classes-grouped)
-     */
     public function indexAdminGrouped()
     {
         $rows = ClassSession::orderBy('date_iso')
@@ -138,10 +126,6 @@ class ClassSessionController extends Controller
         return $this->groupedResponse($rows);
     }
 
-    /**
-     * LISTADO PÚBLICO AGRUPADO (GET /api/classes-grouped)
-     * ✅ Excluye Draft
-     */
     public function indexPublicGrouped()
     {
         $rows = ClassSession::where('level', '!=', 'Draft')
@@ -152,10 +136,6 @@ class ClassSessionController extends Controller
         return $this->groupedResponse($rows);
     }
 
-    /**
-     * Helper: arma la respuesta agrupada
-     * ✅ INCLUYE spots_left A NIVEL DE GRUPO SIEMPRE (inclusive Draft/NoOfferings)
-     */
     private function groupedResponse($rows)
     {
         $grouped = $rows->groupBy(function ($c) {
@@ -186,12 +166,8 @@ class ClassSessionController extends Controller
                 $trainerNames = [$first->trainer_name];
             }
 
-            // ✅ spots_left a nivel de grupo:
-            // - preferimos el valor del base (first)
-            // - si por alguna razón viene null, fallback al máx de sesiones
             $groupSpots = (int) ($first->spots_left ?? $items->max('spots_left') ?? 0);
 
-            // Base común del payload
             $basePayload = [
                 'group_code' => $groupCode,
                 'base_id' => $first->id,
@@ -207,7 +183,6 @@ class ClassSessionController extends Controller
                 'description' => $first->description,
                 'workday_url' => $workdayUrl ?? null,
 
-                // ✅ NUEVO: siempre presente
                 'spots_left' => $groupSpots,
             ];
 
@@ -255,9 +230,6 @@ class ClassSessionController extends Controller
         return response()->json(['classes' => $classes]);
     }
 
-    /**
-     * CREAR CLASE (ADMIN – POST /api/admin/classes)
-     */
     public function store(Request $request)
     {
         $request->merge([
@@ -275,11 +247,9 @@ class ClassSessionController extends Controller
         $validated = $request->validate([
             'title' => 'required|string',
 
-            // ✅ multi trainers
             'trainer_names' => 'sometimes|array',
             'trainer_names.*' => 'string|max:255',
 
-            // ✅ compat legacy
             'trainer_name' => 'sometimes|nullable|string|max:255',
 
             'start_date' => 'sometimes|nullable|date',
@@ -288,7 +258,7 @@ class ClassSessionController extends Controller
             'end_time' => 'sometimes|nullable|date_format:H:i',
 
             'modality' => 'required|in:Online,Presencial',
-            'spots_left' => 'required|integer|min:0', // ✅
+            'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
             'workday_url' => 'nullable|string|max:2000',
 
@@ -312,7 +282,6 @@ class ClassSessionController extends Controller
         $class = new ClassSession();
         $class->title = $validated['title'];
 
-        // ✅ multi + compat
         $class->trainer_names = $trainerNames;
         $class->trainer_name = $trainerNameCompat;
 
@@ -326,7 +295,7 @@ class ClassSessionController extends Controller
         $class->modality = $validated['modality'];
         $class->level = 'General';
 
-        $class->spots_left = (int) $validated['spots_left']; // ✅
+        $class->spots_left = (int) $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
 
         $class->workday_url = $validated['workday_url'] ?? null;
@@ -341,9 +310,6 @@ class ClassSessionController extends Controller
         return response()->json(['class' => $class], 201);
     }
 
-    /**
-     * ACTUALIZAR CLASE (ADMIN – PUT /api/admin/classes/{id})
-     */
     public function update(Request $request, $id)
     {
         $class = ClassSession::findOrFail($id);
@@ -363,11 +329,9 @@ class ClassSessionController extends Controller
         $validated = $request->validate([
             'title' => 'required|string',
 
-            // ✅ multi trainers
             'trainer_names' => 'sometimes|array',
             'trainer_names.*' => 'string|max:255',
 
-            // ✅ compat legacy
             'trainer_name' => 'sometimes|nullable|string|max:255',
 
             'start_date' => 'sometimes|nullable|date',
@@ -376,7 +340,7 @@ class ClassSessionController extends Controller
             'end_time' => 'sometimes|nullable|date_format:H:i',
 
             'modality' => 'required|in:Online,Presencial',
-            'spots_left' => 'required|integer|min:0', // ✅
+            'spots_left' => 'required|integer|min:0',
             'description' => 'nullable|string',
             'workday_url' => 'nullable|string|max:2000',
 
@@ -385,7 +349,6 @@ class ClassSessionController extends Controller
 
         $class->title = $validated['title'];
 
-        // ✅ multi + compat: SOLO si lo mandaron (para no pisar sin querer)
         if (array_key_exists('trainer_names', $validated)) {
             $trainerNames = is_array($validated['trainer_names'])
                 ? array_values(array_filter(
@@ -395,7 +358,7 @@ class ClassSessionController extends Controller
                 : [];
 
             $class->trainer_names = $trainerNames;
-            $class->trainer_name = $trainerNames[0] ?? null; // compat
+            $class->trainer_name = $trainerNames[0] ?? null;
         } elseif (array_key_exists('trainer_name', $validated)) {
             $class->trainer_name = $validated['trainer_name'] ?? null;
             if (!empty($class->trainer_name)) {
@@ -418,7 +381,7 @@ class ClassSessionController extends Controller
         $class->modality = $validated['modality'];
         $class->level = 'General';
 
-        $class->spots_left = (int) $validated['spots_left']; // ✅
+        $class->spots_left = (int) $validated['spots_left'];
         $class->description = $validated['description'] ?? null;
 
         $class->workday_url = $validated['workday_url'] ?? null;
@@ -435,9 +398,6 @@ class ClassSessionController extends Controller
         return response()->json(['class' => $class]);
     }
 
-    /**
-     * ELIMINAR CLASE (ADMIN – DELETE /api/admin/classes/{id})
-     */
     public function destroy($id)
     {
         $class = ClassSession::findOrFail($id);
@@ -465,8 +425,8 @@ class ClassSessionController extends Controller
             'sessions.*.start_time' => ['required', 'date_format:H:i'],
             'sessions.*.end_time' => ['required', 'date_format:H:i'],
 
-            // ✅ spots_left global
-            'spots_left' => 'required|integer|min:0',
+            // ✅ FIX: ahora tolerante
+            'spots_left' => 'sometimes|integer|min:0',
 
             'workday_url' => 'nullable|string|max:2000',
             'audience' => 'nullable|in:sales,all_employees,new_hires,hr,it,legal,manager_leaders,managers_leaders,records',
@@ -501,7 +461,8 @@ class ClassSessionController extends Controller
             $audience = 'manager_leaders';
         }
 
-        $spotsLeft = (int) $validated['spots_left'];
+        // ✅ FIX: si no viene, usa el del base
+        $spotsLeft = (int) ($validated['spots_left'] ?? ($base->spots_left ?? 0));
 
         return DB::transaction(function () use (
             $validated,
@@ -514,7 +475,6 @@ class ClassSessionController extends Controller
             $audience,
             $spotsLeft
         ) {
-            // borra las que no vienen, pero nunca borra la base
             if ($incomingIds->isNotEmpty()) {
                 ClassSession::where('group_code', $groupCode)
                     ->whereNotIn('id', $incomingIds)
@@ -524,7 +484,6 @@ class ClassSessionController extends Controller
 
             $first = $validated['sessions'][0];
 
-            // actualiza base con rango real y primera hora
             $base->date_iso = $rangeStart;
             $base->end_date_iso = $rangeEnd;
             $base->time_range = $first['start_time'] . ' - ' . $first['end_time'];
@@ -532,10 +491,8 @@ class ClassSessionController extends Controller
             $base->audience = $audience ?? $base->audience ?? 'all_employees';
             $base->level = 'General';
 
-            // ✅ aplica cupos al base
             $base->spots_left = $spotsLeft;
 
-            // asegura compat trainers
             if ((!is_array($base->trainer_names) || count($base->trainer_names) === 0) && !empty($base->trainer_name)) {
                 $base->trainer_names = [$base->trainer_name];
             }
@@ -551,14 +508,11 @@ class ClassSessionController extends Controller
                         ->firstOrFail();
 
                     $row->title = $base->title;
-
                     $row->trainer_names = is_array($base->trainer_names) ? $base->trainer_names : [];
                     $row->trainer_name = $base->trainer_name;
 
                     $row->modality = $base->modality;
                     $row->level = 'General';
-
-                    // ✅ aplica cupos a cada sesión
                     $row->spots_left = $spotsLeft;
 
                     $row->description = $base->description;
@@ -607,7 +561,7 @@ class ClassSessionController extends Controller
                 'sessions' => $fresh,
                 'workday_url' => $fresh->pluck('workday_url')->filter()->first(),
                 'audience' => $fresh->pluck('audience')->filter()->first() ?? 'all_employees',
-                'spots_left' => (int) ($fresh->first()?->spots_left ?? $spotsLeft), // ✅ útil para el FE
+                'spots_left' => (int) ($fresh->first()?->spots_left ?? $spotsLeft),
             ]);
         });
     }

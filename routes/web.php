@@ -156,6 +156,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // ===== CLASES ADMIN =====
     Route::get('/api/admin/classes', [ClassSessionController::class, 'index']);
+    Route::get('/api/admin/classes-grouped', [ClassSessionController::class, 'indexAdminGrouped']);
 
     Route::post('/api/admin/classes', [ClassSessionController::class, 'store'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
@@ -171,6 +172,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::put('/api/admin/classes/{id}/sessions', [ClassSessionController::class, 'syncSessions'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
+
+
 });
 
 /*
