@@ -167,9 +167,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::delete('/api/admin/classes/{id}', [ClassSessionController::class, 'destroy'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 
-    Route::post('/api/admin/classes/{id}/sessions', [ClassSessionController::class, 'syncSessions'])
-        ->withoutMiddleware([ValidateCsrfToken::class]);
-
     Route::put('/api/admin/classes/{id}/sessions', [ClassSessionController::class, 'syncSessions'])
         ->withoutMiddleware([ValidateCsrfToken::class]);
 

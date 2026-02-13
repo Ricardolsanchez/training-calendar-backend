@@ -148,7 +148,7 @@ class ClassSessionController extends Controller
             $workdayUrl = $items->pluck('workday_url')->filter()->first();
             $allIds = $items->pluck('id')->values()->all();
 
-            $isDraftGroup = $items->every(fn ($x) => $x->level === 'Draft');
+            $isDraftGroup = $items->every(fn($x) => $x->level === 'Draft');
 
             $isNoOfferingsGroup = $items->every(function ($x) {
                 $tr = trim((string) ($x->time_range ?? ''));
@@ -156,7 +156,7 @@ class ClassSessionController extends Controller
             });
 
             $trainerNames = $items->pluck('trainer_names')
-                ->filter(fn ($v) => is_array($v) && count($v) > 0)
+                ->filter(fn($v) => is_array($v) && count($v) > 0)
                 ->first();
 
             if (!is_array($trainerNames)) {
@@ -269,7 +269,7 @@ class ClassSessionController extends Controller
         if (array_key_exists('trainer_names', $validated) && is_array($validated['trainer_names'])) {
             $trainerNames = array_values(array_filter(
                 $validated['trainer_names'],
-                fn ($v) => is_string($v) && trim($v) !== ''
+                fn($v) => is_string($v) && trim($v) !== ''
             ));
         } elseif (!empty($validated['trainer_name'])) {
             $trainerNames = [$validated['trainer_name']];
@@ -353,7 +353,7 @@ class ClassSessionController extends Controller
             $trainerNames = is_array($validated['trainer_names'])
                 ? array_values(array_filter(
                     $validated['trainer_names'],
-                    fn ($v) => is_string($v) && trim($v) !== ''
+                    fn($v) => is_string($v) && trim($v) !== ''
                 ))
                 : [];
 
@@ -443,10 +443,14 @@ class ClassSessionController extends Controller
         $rangeStart = $dates->first();
         $rangeEnd = $dates->last();
 
+        if (empty($validated['sessions'][0]['id'])) {
+            $validated['sessions'][0]['id'] = (int) $base->id;
+        }
+
         $incomingIds = collect($validated['sessions'])
             ->pluck('id')
             ->filter()
-            ->map(fn ($v) => (int) $v)
+            ->map(fn($v) => (int) $v)
             ->values();
 
         $workdayUrl = array_key_exists('workday_url', $validated)
@@ -464,17 +468,7 @@ class ClassSessionController extends Controller
         // ✅ FIX: si no viene, usa el del base
         $spotsLeft = (int) ($validated['spots_left'] ?? ($base->spots_left ?? 0));
 
-        return DB::transaction(function () use (
-            $validated,
-            $base,
-            $groupCode,
-            $incomingIds,
-            $rangeStart,
-            $rangeEnd,
-            $workdayUrl,
-            $audience,
-            $spotsLeft
-        ) {
+        return DB::transaction(function () use ($validated, $base, $groupCode, $incomingIds, $rangeStart, $rangeEnd, $workdayUrl, $audience, $spotsLeft) {
             if ($incomingIds->isNotEmpty()) {
                 ClassSession::where('group_code', $groupCode)
                     ->whereNotIn('id', $incomingIds)
