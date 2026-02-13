@@ -282,6 +282,7 @@ class BookingController extends Controller
             'Monica Mendoza' => 'mmendoza@alonsoalonsolaw.com',
             'Alexandria Yorkman' => 'ayorkman@alonsoalonsolaw.com',
             'Kelvin Hodgson' => 'kelvinh@alonsoalonsolaw.com',
+            'Rachel Rodriguez' => 'racrodriguez@alonsoalonsolaw.com',
             'Edma Murillo' => 'emurillo@alonsoalonsolaw.com',
             'Dora Ramirez' => 'dramirez@alonsoalonsolaw.com',
             'Ada Perez' => 'adaperez@alonsoalonsolaw.com',
