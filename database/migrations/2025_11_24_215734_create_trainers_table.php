@@ -18,10 +18,12 @@ return new class extends Migration
             ['id' => 1, 'name' => 'Sergio Osorio'],
             ['id' => 2, 'name' => 'Monica Mendoza'],
             ['id' => 3, 'name' => 'Kelvin Hodgson'],
-            ['id' => 4, 'name' => 'Edma Murillo'],
-            ['id' => 5, 'name' => 'Dora Ramirez'],
-            ['id' => 6, 'name' => 'Ada Perez'],
-            ['id' => 7, 'name'=> 'Alexandria Yorkman']
+            ['id' => 4, 'name' => 'Rachel Rodriguez'],
+            ['id' => 5, 'name' => 'Edma Murillo'],
+            ['id' => 6, 'name' => 'Alfonso Peña'],
+            ['id' => 7, 'name' => 'Dora Ramirez'],
+            ['id' => 8, 'name' => 'Ada Perez'],
+            ['id' => 9, 'name'=> 'Alexandria Yorkman']
         ]);
     }
 
